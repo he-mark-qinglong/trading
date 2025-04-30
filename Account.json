@@ -1,0 +1,46 @@
+{
+      "binance_jan":{
+        "apikey":"VKPV4qNQ",
+        "secretkey":"wLyPTDw",
+        "exchange":"binance",
+        "accname":"binance_jan",
+        "root":"/root/yangbo/jan_bina/record",
+        "root1":"c:/实时数据获取V3"
+    },
+    
+     "okex_v5_excute":{
+        "apikey" : "8063c1db-2c10-4224-bce4-d7a1c2fde309",
+        "secretkey" : "536F22A254B95F63E192A075B31C1375",
+        "备注名" : "excute",
+        "passphrase":"Heqinglong1989.,",
+        "exchange":"OKEX",
+        "accname":"OKEX_yyyyy1",
+        "root":"/root/yangbo/yyyyy1_difp_arb/record",
+        "root1":"c:/实时数据获取V3"
+    },
+      "okex_v5_yyyyy2":{
+        "apikey":"2848b6",
+        "secretkey":"1AE74A36D",
+        "passphrase":"Yb",
+        "exchange":"OKEX",
+        "accname":"OKEX_yyyyy2",
+        "root":"/root/yangbo/yyyyy2/record",
+        "root1":"c:/实时数据获取V3"
+    },
+    
+   
+   
+   "okex_v5_hql":{
+      "apikey":"1b58c6cf54bd",
+      "secretkey":"72B345D3",
+      "passphrase":"Yangbo1.",
+      "exchange":"OKEX",
+      "accname":"OKEX_xh",
+      "root":"/root/yangbo/xh/record",
+      "root1":"c:/实时数据获取V3"
+  }
+    
+
+ 
+ 
+}
