@@ -33,11 +33,7 @@ class Client(object):
 
         # send request
         response = None
-
-        print("url:", url)
-        # print("headers:", header)
-        print("body:", body)
-
+        
         if method == c.GET:
             response = requests.get(url, headers=header)
         elif method == c.POST:
@@ -47,6 +43,10 @@ class Client(object):
         # print(response.headers)
 
         if not str(response.status_code).startswith('2'):
+            print("url:", url)
+            print("headers:", header)
+            print("body:", body)
+
             raise exceptions.OkexAPIException(response)
 
         return response.json()
