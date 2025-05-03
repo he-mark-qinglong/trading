@@ -167,11 +167,19 @@ class trade_coin(object):
             window_tau_1h = window_tau_1m * 56
             multFramevpPOC = MultiTFvpPOC(window_LFrame=window_tau_1m, window_HFrame=window_tau_1h)
             multFramevpPOC.calculate_HFrame_vpPOC_and_std(self.coin_date)
+            from vpvr_gmm_splited import VPVRAnalyzer
+            
+
             LFrame_vpPOCs = multFramevpPOC.LFrame_vpPOC_series
             HFrame_vpPOCs = multFramevpPOC.HFrame_vpPOC
 
             if self.save_pic_counter % self.save_pic_interval == 0:
                 plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol)
+                time.sleep(0.2)
+                analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
+                result = analyzer.run(self.symbol)
+                print(result['regions'])
+                
                 if self.save_pic_counter >= 4294967296-1:  #2**32 - 1, avoid value overflow
                     self.save_pic_counter = 1
             self.save_pic_counter += 1
@@ -204,22 +212,28 @@ class trade_coin(object):
                 LFrame_vpPOC_long = 0
                 HF_STDUpper = multFramevpPOC.HFrame_std_2_0_up.iloc[-1] 
                 HF_STDLower = multFramevpPOC.HFrame_std_2_0_down.iloc[-1]
+                #不考虑rsi的话，可能小周期的3倍标准差会安全一些，考虑rsi估计用小周期的2倍标准差就可以。
                 LF_STDUpper = multFramevpPOC.LFrame_std_3_upper.iloc[-1]
                 LF_STDLower = multFramevpPOC.LFrame_std_3_lower.iloc[-1]
-                minus_to_HFramePOC_percent_delta = 0.02  #避免拨付收窄的时候还在开仓，结果开出了逆势的仓位，容易导致长期扛单。
-                minus_single_direction_delta = 0.005
+                
+                minus_to_HFramePOC_percent_delta = 0.01  #避免std收窄的时候还在开仓，结果开出了逆势的仓位，容易导致长期扛单。
+                minus_single_direction_delta = 0.01
 
                 if 'ETH' in self.symbol or 'BTC' in self.symbol:
                     HF_STDUpper = multFramevpPOC.HFrame_std_1_5_up.iloc[-1]
                     HF_STDLower = multFramevpPOC.HFrame_std_1_5_down.iloc[-1]
-                    LF_STDUpper = multFramevpPOC.LFrame_std_2_upper.iloc[-1]
-                    LF_STDLower = multFramevpPOC.LFrame_std_2_lower.iloc[-1]
-                    minus_to_HFramePOC_percent_delta = 0.01
-                    minus_single_direction_delta = 0.0025
+                    LF_STDUpper = multFramevpPOC.LFrame_std_3_upper.iloc[-1]
+                    LF_STDLower = multFramevpPOC.LFrame_std_3_lower.iloc[-1]
+                    minus_to_HFramePOC_percent_delta = 0.005
+                    minus_single_direction_delta = 0.01
                 
                 is_short_un_opend = len(buy_total_short)<2
-                minus_single_direction_short_cond = cur_close/min(ohcl5.iloc[-29:])<(1+minus_single_direction_delta)
-                # holding_short_drop_cond = cur_close/buy_total_short.iloc[-1,2]>1+minus_single_direction_delta
+                if is_short_un_opend:
+                    minus_single_direction_short_cond = cur_close/LFrame_vpPOCs.iloc[-1] > (1+minus_single_direction_delta)
+                else:
+                    previous_short_filllPx = buy_total_short.iloc[-1,2]
+                    minus_single_direction_short_cond = cur_close/previous_short_filllPx > 1+minus_single_direction_delta
+
                 if (is_short_un_opend
                     and HF_STDUpper <= cur_close and LF_STDUpper <= cur_close and cur_close/multFramevpPOC.HFrame_vpPOC.iloc[-1] <= 1 + minus_to_HFramePOC_percent_delta) \
                     or \
@@ -227,9 +241,14 @@ class trade_coin(object):
                     LFrame_vpPOC_short=1
                 else:
                     self.cancel_order()
+
                 is_long_un_opend = len(buy_total_long)<2
-                minus_single_direction_long_cond = cur_close/min(ohcl5.iloc[-29:])<(1-minus_single_direction_delta)
-                # holding_long_drop_cond = cur_close/buy_total_long.iloc[-1,2]>1-minus_single_direction_delta
+                if is_long_un_opend:
+                    minus_single_direction_long_cond = cur_close/LFrame_vpPOCs.iloc[-1] < (1-minus_single_direction_delta)
+                else:
+                    previous_long_filllPx = buy_total_long.iloc[-1,2]
+                    minus_single_direction_long_cond = cur_close/previous_long_filllPx < 1-minus_single_direction_delta
+
                 if (is_long_un_opend \
                     and HF_STDLower >= cur_close and LF_STDLower >= cur_close and cur_close/multFramevpPOC.HFrame_vpPOC.iloc[-1] <= 1 - minus_to_HFramePOC_percent_delta)\
                     or (not is_long_un_opend  and time.time()-buy_total_long.iloc[-1,5]>59):
@@ -237,18 +256,19 @@ class trade_coin(object):
                 else:
                     self.cancel_order()
 
-                print('self.upl_long_open==1',self.upl_long_open==1,'self.upl_short_open==1',self.upl_short_open==1,'--3'*50)
+                print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, LFrame_vpPOC_long=={LFrame_vpPOC_long}, self.upl_short_open=={self.upl_short_open==1}, LFrame_vpPOC_short=={LFrame_vpPOC_short } minus_single_direction_short_cond={minus_single_direction_short_cond}',
+                      '--3'*50)
 
-                if self.asset_normal==1 and LFrame_vpPOC_short==1 and self.upl_short_open==1 and minus_single_direction_short_cond:
+                if self.asset_normal==1 and self.upl_short_open==1 and LFrame_vpPOC_short==1  and minus_single_direction_short_cond:
                     #开空
                     try:  
                         if 1 :
                           usdt_total=self.get_usdt_total()
                           model='buyshort'
                           price0=hh2.iloc[-1]
-                          price=price0*(1+0.0001)
+                          price = price0*(1+0.0001) if len(buy_total_long)>=2 else price0*(1-0.0002)  #首次开仓立刻成交
                           fv=self.fv[self.symbol]
-                          amount=max(int(round(usdt_total/self.asset_coe/price0/fv)),1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 0.11)
                           symbol=self.symbol
                           place_order=self.create_order1(symbol,price,amount,model)
                           print(place_order,symbol,model)
@@ -276,16 +296,16 @@ class trade_coin(object):
                     self.upl_open_condition()
 
                 
-                if self.asset_normal==1 and LFrame_vpPOC_long==1 and self.upl_long_open==1 and minus_single_direction_long_cond:
+                if self.asset_normal==1 and self.upl_long_open==1 and LFrame_vpPOC_long==1 and minus_single_direction_long_cond:
                     #开多
                     try:  
                         if 1:
                           usdt_total=self.get_usdt_total()
                           model='buylong'
                           price0=ll2.iloc[-1]
-                          price=price0*(1 - 0.0001)
+                          price=price0*(1+0.0002) if len(buy_total_long)>=2 else price0*(1-0.0001)  #首次开仓立刻成交
                           fv=self.fv[self.symbol]
-                          amount=max(int(round(usdt_total/self.asset_coe/price0/fv)),1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)),0.1)
                           symbol=self.symbol
                           place_order=self.create_order1(symbol,price,amount,model)
                           try:
@@ -343,13 +363,13 @@ class trade_coin(object):
                          stop_profit=0.005
                     else:
                         stop_profit=0.005
-                    min_profit = 0.0015
+                    cross_hframe_poc_min_profit = 0.0005
                     if amount_short>0 and (upl_short/notionalUsd_short>stop_profit or
-                                           (upl_short/notionalUsd_short > min_profit and cur_close <= LFrame_vpPOCs.iloc[-1])):
+                                           (upl_short/notionalUsd_short > cross_hframe_poc_min_profit and cur_close <= HFrame_vpPOCs.iloc[-1])):
                         model='sellshort'
                         price0=cur_close
-                        price=price0*(1+0.0001)
-                        amount=max(amount_short/4, 1)
+                        price=price0*(1-0.0001)
+                        amount=max(amount_short, 1)
                         symbol=self.symbol
                         place_order=self.create_order1(symbol,price,amount,model)
                         self.cancel_order()
@@ -360,11 +380,11 @@ class trade_coin(object):
                         pickle.dump(buy_total,pk1)
                         pk1.close()
                     if amount_long>0 and (upl_long/notionalUsd_long>stop_profit or
-                                          (upl_long/notionalUsd_long > min_profit and cur_close >= LFrame_vpPOCs.iloc[-1])):
+                                          (upl_long/notionalUsd_long > cross_hframe_poc_min_profit and cur_close >= HFrame_vpPOCs.iloc[-1])):
                         model='selllong'
                         price0=cur_close
-                        price=price0*(1.00 - 0.0001)
-                        amount=max(amount_long/4, 1)
+                        price=price0*(1.00 + 0.0001)
+                        amount=max(amount_long, 1)
                         symbol=self.symbol
                         place_order=self.create_order1(symbol,price,amount,model)
                         self.cancel_order()
@@ -375,7 +395,7 @@ class trade_coin(object):
                         pickle.dump(buy_total,pk1)
                         pk1.close()
                 
-                    if ((upl_long+ upl_short)/usdt_total<-0.2) or self.asset_normal==0 :
+                    if ((upl_long+ upl_short)/usdt_total<-0.15) or self.asset_normal==0 :
                         try:  
                             if self.asset_normal==0:
                                logging.info((self.user,'当日回撤过大所有仓位止损'))
@@ -693,7 +713,7 @@ if __name__=='__main__':
     aa1=trade_coin('ETH-USDT-SWAP','yyyyy2_okx',1500)
     aa2=trade_coin('XRP-USDT-SWAP','yyyyy2_okx',1500)
     aa3=trade_coin('SOL-USDT-SWAP','yyyyy2_okx',1500)
-    aa4=trade_coin('DOGE-USDT-SWAP','yyyyy2_okx',1500)
+    # aa4=trade_coin('DOGE-USDT-SWAP','yyyyy2_okx',1500)
     aa5=trade_coin('TRUMP-USDT-SWAP','yyyyy2_okx',1500)
     aa6=trade_coin('BTC-USDT-SWAP','yyyyy2_okx',1500)
     while(1):
@@ -708,19 +728,19 @@ if __name__=='__main__':
             threads.append(t2)
             t3 = threading.Thread(target = aa3.trade1) 
             threads.append(t3)
-            t4 = threading.Thread(target = aa4.trade1) 
-            threads.append(t4)
+            # t4 = threading.Thread(target = aa4.trade1) 
+            # threads.append(t4)
             t5 = threading.Thread(target = aa5.trade1) 
             threads.append(t5)
-            t6 = threading.Thread(target = aa5.trade1) 
+            t6 = threading.Thread(target = aa6.trade1) 
             threads.append(t6)
             i=0
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(0.1)
+                time.sleep(1)
                 if i%3==0:
-                    time.sleep(2)
+                    time.sleep(3)
             for t in threads:
                 t.join()
         except:
