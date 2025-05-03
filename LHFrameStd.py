@@ -19,8 +19,8 @@ class MultiTFvpPOC:
         self.LFrame_rolling_std = None  
         self.LFrame_std_2_upper = None  
         self.LFrame_std_2_lower = None  
-        self.LFrame_std_3_upper = None  
-        self.LFrame_std_3_lower = None  
+        self.LFrame_std_4_upper = None  
+        self.LFrame_std_4_lower = None  
 
         self.HFrame_vpPOC = None  
         self.HFrame_ohlc5_series = None  
@@ -41,11 +41,11 @@ class MultiTFvpPOC:
         self.HFrame_std_3_5_down = None  
 
     @staticmethod  
-    def calculate_ohlc5(coin_date: pd.DataFrame) -> pd.Series:  
-        open_ = coin_date.iloc[:, 1]  
-        high = coin_date.iloc[:, 2]  
-        low = coin_date.iloc[:, 3]  
-        close = coin_date.iloc[:, 4]  
+    def calculate_ohlc5(coin_date_df: pd.DataFrame) -> pd.Series:  
+        open_ = coin_date_df.iloc[:, 1]  
+        high = coin_date_df.iloc[:, 2]  
+        low = coin_date_df.iloc[:, 3]  
+        close = coin_date_df.iloc[:, 4]  
 
         weights_l, weights_c, weights_h, weights_o = 1.5, 2.0, 1.5, 0.5  
         weight_sum = weights_l + weights_c + weights_h + weights_o  
@@ -171,8 +171,8 @@ class MultiTFvpPOC:
 
         self.LFrame_std_2_upper = self.LFrame_vpPOC_series + 2 * self.LFrame_rolling_std  
         self.LFrame_std_2_lower = self.LFrame_vpPOC_series - 2 * self.LFrame_rolling_std  
-        self.LFrame_std_3_upper = self.LFrame_vpPOC_series + 3 * self.LFrame_rolling_std  
-        self.LFrame_std_3_lower = self.LFrame_vpPOC_series - 3 * self.LFrame_rolling_std  
+        self.LFrame_std_4_upper = self.LFrame_vpPOC_series + 4 * self.LFrame_rolling_std  
+        self.LFrame_std_4_lower = self.LFrame_vpPOC_series - 4 * self.LFrame_rolling_std  
 
         self.HFrame_vpPOC = self.twpoc_calc_with_lambda_for_HFrame(coin_date_df)  
         self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
@@ -187,8 +187,42 @@ class MultiTFvpPOC:
             setattr(self, f'HFrame_std_{str(m).replace(".", "_")}_up', upper)  
             setattr(self, f'HFrame_std_{str(m).replace(".", "_")}_down', lower)  
 
+    def rsi_with_ema_smoothing(self, coin_date_df, length=13):  
+        close = coin_date_df.iloc[:, 4]  
 
+        delta = close.diff(1)
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
 
+        gain.iloc[0] = 0
+        loss.iloc[0] = 0
+
+        avg_gain = gain.rolling(window=length, min_periods=length).mean()
+        avg_loss = loss.rolling(window=length, min_periods=length).mean()
+
+        # 将初始值赋到第length-1的位置，前面都是NaN
+        avg_gain = avg_gain.to_numpy()
+        avg_loss = avg_loss.to_numpy()
+        gain = gain.to_numpy()
+        loss = loss.to_numpy()
+
+        # 从length位置开始迭代计算后续avg_gain和avg_loss
+        for i in range(length, len(close)):  
+            avg_gain[i] = (avg_gain[i - 1] * (length - 1) + gain[i]) / length  
+            avg_loss[i] = (avg_loss[i - 1] * (length - 1) + loss[i]) / length  
+
+        rs = avg_gain / avg_loss
+        # 转回pd.Series，并赋予index
+        rsi_raw = pd.Series(100 - 100 / (1 + rs), index=close.index)
+
+        # 处理除零及特殊情况
+        rsi_raw[avg_loss == 0] = 100
+        rsi_raw[(avg_gain == 0) & (avg_loss == 0)] = 0
+
+        # EMA平滑
+        rsi_ema = rsi_raw.ewm(alpha=2/(length+1), adjust=False, min_periods=length).mean()
+        
+        return rsi_ema
 
 import os
 import time
@@ -206,8 +240,8 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
         'LFrame_ohlc5_series': 'green',
         'LFrame_std_2_upper': 'cyan',
         'LFrame_std_2_lower': 'cyan',
-        'LFrame_std_3_upper': 'lightblue',
-        'LFrame_std_3_lower': 'lightblue',
+        'LFrame_std_4_upper': 'lightblue',
+        'LFrame_std_4_lower': 'lightblue',
         'HFrame_vpPOC': 'purple',
         'HFrame_ohlc5_series': 'orange',
     }
@@ -216,7 +250,7 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     for var in [
         'LFrame_ohlc5_series',
         'LFrame_std_2_upper', 'LFrame_std_2_lower',
-        'LFrame_std_3_upper', 'LFrame_std_3_lower',
+        'LFrame_std_4_upper', 'LFrame_std_4_lower',
     ]:
         val = getattr(multFramevpPOC, var, None)
         if val is not None and hasattr(val, 'index') and hasattr(val, 'values'):
@@ -258,7 +292,7 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     for var in [
         'LFrame_ohlc5_series',
         'LFrame_std_2_upper', 'LFrame_std_2_lower',
-        'LFrame_std_3_upper', 'LFrame_std_3_lower',
+        'LFrame_std_4_upper', 'LFrame_std_4_lower',
         'LFrame_vpPOC_series',
         'HFrame_vpPOC',
     ]:
