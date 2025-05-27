@@ -2,16 +2,98 @@ import numpy as np
 import pandas as pd  
 import os   
 
+import numpy as np
+import pandas as pd
+
+def vpvr_pct_band_vwap_boundary_series(src, vol, length, bins, pct, decay, vwap_series):
+    """
+    输入:
+        src, vol, vwap_series: pd.Series, 价格、成交量、vwap等
+        length: 滑窗长度
+        bins: 分桶数
+        pct: 累计包含的成交量比例，0~1
+        decay: 时间加权衰减因子
+    输出:
+        pd.DataFrame：index与输入一致，含 band_low/band_high/vwap 三列
+    """
+    src = pd.Series(src)
+    vol = pd.Series(vol)
+    vwap_series = pd.Series(vwap_series)
+    index = src.index
+    band_low = np.full(len(src), np.nan)
+    band_high = np.full(len(src), np.nan)
+    for end in range(length-1, len(src)):
+        slc = slice(end-length+1, end+1)
+        s = src.iloc[slc].values
+        v = vol.iloc[slc].values
+        vv = vwap_series.iloc[end]
+        lowv = np.min(s)
+        highv = np.max(s)
+        binsize = max((highv - lowv) / bins, 1e-8)
+        accum = np.zeros(bins)
+        for j in range(length):
+            pricej = s[j]
+            volj   = v[j]
+            weightj = decay**(length - 1 - j)
+            bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
+            bini = max(0, min(bins - 1, bini))
+            accum[bini] += volj * weightj
+        total_vol = np.sum(accum)
+        if total_vol == 0:
+            continue
+        # 找最大积点（POC）的位置
+        center_idx = np.argmax(accum)
+        sum_vol = accum[center_idx]
+        left_idx = center_idx
+        right_idx = center_idx
+        while sum_vol < total_vol * pct:
+            add_left = accum[left_idx - 1] if left_idx > 0 else -1
+            add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
+            if add_left >= add_right:
+                if left_idx > 0:
+                    left_idx -= 1
+                    sum_vol += accum[left_idx]
+                elif right_idx < bins - 1:
+                    right_idx += 1
+                    sum_vol += accum[right_idx]
+                else:
+                    break
+            else:
+                if right_idx < bins - 1:
+                    right_idx += 1
+                    sum_vol += accum[right_idx]
+                elif left_idx > 0:
+                    left_idx -= 1
+                    sum_vol += accum[left_idx]
+                else:
+                    break
+        # 计算边界加权均价
+        # 下边界
+        vlow = accum[left_idx]
+        pricelow = lowv + binsize * (left_idx + 0.5)
+        band_low[end] = (vlow * pricelow) / vlow if vlow > 0 else np.nan
+        # 上边界
+        vhigh = accum[right_idx]
+        pricehigh = lowv + binsize * (right_idx + 0.5)
+        band_high[end] = (vhigh * pricehigh) / vhigh if vhigh > 0 else np.nan
+
+    return pd.Series(band_low, index=index), pd.Series(band_high, index=index)
+    
 class MultiTFvpPOC:  
     def __init__(self,  
                  lambd=0.03,  
-                 window_LFrame=15,  
-                 window_HFrame=15*48,  
+                 window_LFrame=12,  
+                 window_HFrame=12*10,
+                 window_SFrame=12*10 * 4,
+  
                  std_window_LFrame=15):  
         self.lambd = lambd  
         self.window_LFrame = window_LFrame  
         self.window_HFrame = window_HFrame  
         self.std_window_LFrame = std_window_LFrame  
+
+
+        self.golden_split_factor = 1.618 
 
         # 预定义所有结果属性为None  
         self.LFrame_vpPOC_series = None  
@@ -19,8 +101,7 @@ class MultiTFvpPOC:
         self.LFrame_rolling_std = None  
         self.LFrame_std_2_upper = None  
         self.LFrame_std_2_lower = None  
-        self.LFrame_std_4_upper = None  
-        self.LFrame_std_4_lower = None  
+
 
         self.HFrame_vpPOC = None  
         self.HFrame_ohlc5_series = None  
@@ -42,6 +123,8 @@ class MultiTFvpPOC:
 
     @staticmethod  
     def calculate_ohlc5(coin_date_df: pd.DataFrame) -> pd.Series:  
+        return coin_date_df.iloc[:, 4]
+    
         open_ = coin_date_df.iloc[:, 1]  
         high = coin_date_df.iloc[:, 2]  
         low = coin_date_df.iloc[:, 3]  
@@ -169,10 +252,9 @@ class MultiTFvpPOC:
         self.LFrame_rolling_std = self.LFrame_vpPOC_series.rolling(window=self.std_window_LFrame, min_periods=1).std()  
         self.LFrame_rolling_std.index = coin_date_df.index  
 
-        self.LFrame_std_2_upper = self.LFrame_vpPOC_series + 2 * self.LFrame_rolling_std  
-        self.LFrame_std_2_lower = self.LFrame_vpPOC_series - 2 * self.LFrame_rolling_std  
-        self.LFrame_std_4_upper = self.LFrame_vpPOC_series + 4 * self.LFrame_rolling_std  
-        self.LFrame_std_4_lower = self.LFrame_vpPOC_series - 4 * self.LFrame_rolling_std  
+
+        self.LFrame_std_2_upper = self.LFrame_vpPOC_series + 2 * self.LFrame_rolling_std  * self.golden_split_factor
+        self.LFrame_std_2_lower = self.LFrame_vpPOC_series - 2 * self.LFrame_rolling_std  * self.golden_split_factor
 
         self.HFrame_vpPOC = self.twpoc_calc_with_lambda_for_HFrame(coin_date_df)  
         self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
@@ -180,12 +262,26 @@ class MultiTFvpPOC:
         self.HFrame_price_std = self.HFrame_ohlc5_series.rolling(window=self.window_HFrame, min_periods=1).std()  
         self.HFrame_price_std.index = coin_date_df.index  
 
-        multipliers = [0.5, 1.0, 1.5, 2.0, 3.0, 3.5]  
+        
+        multipliers = [0.5, 1.0, 1.5, 2.0] 
         for m in multipliers:  
-            upper = self.HFrame_vpPOC + m * self.HFrame_price_std  
-            lower = self.HFrame_vpPOC - m * self.HFrame_price_std  
+            upper = self.HFrame_vpPOC + m * self.HFrame_price_std * self.golden_split_factor
+            lower = self.HFrame_vpPOC - m * self.HFrame_price_std * self.golden_split_factor
             setattr(self, f'HFrame_std_{str(m).replace(".", "_")}_up', upper)  
             setattr(self, f'HFrame_std_{str(m).replace(".", "_")}_down', lower)  
+
+
+        low_poc, high_poc = vpvr_pct_band_vwap_boundary_series(
+                    src=coin_date_df['close'],
+                    vol=coin_date_df['vol'],
+                    length=self.window_HFrame,         # 滑动窗口长度
+                    bins=40,
+                    pct=0.95,
+                    decay=0.995,
+                    vwap_series=self.LFrame_vpPOC_series   # vwap请提前自行计算、赋值
+                )
+        setattr(self, f'HFrame_vwap_up', high_poc)  
+        setattr(self, f'HFrame_vwap_down', low_poc) 
 
     def rsi_with_ema_smoothing(self, coin_date_df, length=13):  
         close = coin_date_df.iloc[:, 4]  
@@ -229,7 +325,6 @@ import time
 import matplotlib  
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
-
 def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     fig, ax = plt.subplots(figsize=(15, 8))
     fig.patch.set_facecolor('black')
@@ -240,21 +335,21 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
         'LFrame_ohlc5_series': 'green',
         'LFrame_std_2_upper': 'cyan',
         'LFrame_std_2_lower': 'cyan',
-        'LFrame_std_4_upper': 'lightblue',
-        'LFrame_std_4_lower': 'lightblue',
         'HFrame_vpPOC': 'purple',
         'HFrame_ohlc5_series': 'orange',
+        # 新增的两根线
+        'HFrame_vwap_up': 'black',
+        'HFrame_vwap_down': 'black'
     }
 
     # 绘制LFrame线
     for var in [
         'LFrame_ohlc5_series',
         'LFrame_std_2_upper', 'LFrame_std_2_lower',
-        'LFrame_std_4_upper', 'LFrame_std_4_lower',
     ]:
         val = getattr(multFramevpPOC, var, None)
         if val is not None and hasattr(val, 'index') and hasattr(val, 'values'):
-            ax.plot(val.index, val.values, label=var, color=colors.get(var, 'white'), linewidth=1)
+            ax.plot(val.index, val.values, label=var, color=colors.get(var, 'black'), linewidth=1)
 
     lframe_vp = getattr(multFramevpPOC, 'LFrame_vpPOC_series', None)
     if lframe_vp is not None and hasattr(lframe_vp, 'index') and hasattr(lframe_vp, 'values'):
@@ -264,6 +359,15 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     hframe_vp = getattr(multFramevpPOC, 'HFrame_vpPOC', None)
     if hframe_vp is not None and hasattr(hframe_vp, 'index') and hasattr(hframe_vp, 'values'):
         ax.plot(hframe_vp.index, hframe_vp.values, label='HFrame vpPOC', color=colors['HFrame_vpPOC'], linewidth=3)
+
+    # 新增 - HFrame上下边界线
+    hframe_vwap_up = getattr(multFramevpPOC, 'HFrame_vwap_up', None)
+    if hframe_vwap_up is not None and hasattr(hframe_vwap_up, 'index') and hasattr(hframe_vwap_up, 'values'):
+        ax.plot(hframe_vwap_up.index, hframe_vwap_up.values, label='HFrame vwap upper', color=colors['HFrame_vwap_up'], linestyle='--', linewidth=1.5)
+
+    hframe_vwap_down = getattr(multFramevpPOC, 'HFrame_vwap_down', None)
+    if hframe_vwap_down is not None and hasattr(hframe_vwap_down, 'index') and hasattr(hframe_vwap_down, 'values'):
+        ax.plot(hframe_vwap_down.index, hframe_vwap_down.values, label='HFrame vwap lower', color=colors['HFrame_vwap_down'], linestyle='--', linewidth=1.5)
 
     # HFrame标准差倍数和对应颜色
     hframe_std_multipliers = [0.5, 1.0, 1.5, 2.0, 3.0, 3.5]
@@ -292,9 +396,9 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     for var in [
         'LFrame_ohlc5_series',
         'LFrame_std_2_upper', 'LFrame_std_2_lower',
-        'LFrame_std_4_upper', 'LFrame_std_4_lower',
         'LFrame_vpPOC_series',
         'HFrame_vpPOC',
+        'HFrame_vwap_up', 'HFrame_vwap_down'   # 新增这两根线
     ]:
         val = getattr(multFramevpPOC, var, None)
         if val is not None and hasattr(val, 'values'):

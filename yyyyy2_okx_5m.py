@@ -50,7 +50,7 @@ class trade_coin(object):
         self.asset_time=0
         self.asset_record = deque(maxlen=1440)
 
-        self.save_pic_interval = 100
+        self.save_pic_interval = 20 #100
         self.save_pic_counter = 0
 
         if 'ETH' in self.symbol:
@@ -164,11 +164,12 @@ class trade_coin(object):
             4	收盘价 (Close)	该时间周期的收盘价格
             5	成交量 (Volume)	该时间周期的成交量或成交额
             '''
-            window_tau_1m = 30
-            window_tau_1h = window_tau_1m * 56
-            multFramevpPOC = MultiTFvpPOC(window_LFrame=window_tau_1m, window_HFrame=window_tau_1h)
+            window_tau_l = 12
+            window_tau_h = window_tau_l * 10
+            window_tau_s = window_tau_h * 4
+            multFramevpPOC = MultiTFvpPOC(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
             multFramevpPOC.calculate_HFrame_vpPOC_and_std(self.coin_date)
-            rsi_ema_recent = multFramevpPOC.rsi_with_ema_smoothing(self.coin_date).iloc[-1]
+            # rsi_ema_recent = multFramevpPOC.rsi_with_ema_smoothing(self.coin_date).iloc[-1]
             
             LFrame_vpPOCs = multFramevpPOC.LFrame_vpPOC_series
 
@@ -220,26 +221,26 @@ class trade_coin(object):
                 if is_short_un_opend:
                     minus_short_cond = close_to_lframe_vwap_percent > (1+minus_close_to_lframe_vwap_percent) 
                     lf2hf_cond = multFramevpPOC.LFrame_vpPOC_series.iloc[-1]/multFramevpPOC.HFrame_std_0_5_down.iloc[-1] >= 1 + minus_LFramePOC_to_HFramePOC_percent_delta
-                    if rsi_ema_recent >= 55 and minus_short_cond and HF_STDUpper <= cur_close:  # and LF_STDUpper <= cur_close and lf2hf_cond:
+                    if  minus_short_cond and HF_STDUpper <= cur_close:  # and LF_STDUpper <= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_short=1
                 else:  #加仓条件
                     previous_short_filllPx = buy_total_short.iloc[-1,2]
                     minus_short_cond = cur_close/previous_short_filllPx > 1 + (minus_close_to_lframe_vwap_percent*2)
                     time_cond =  time.time() - buy_total_short.iloc[-1,5]>59
-                    if (rsi_ema_recent >= 55 and minus_short_cond and time_cond):
+                    if ( minus_short_cond and time_cond):
                         multiFrame_vpPOC_short=1
 
                 is_long_un_opend = len(buy_total_long)<2
                 if is_long_un_opend:
                     minus_long_cond = close_to_lframe_vwap_percent < (1-minus_close_to_lframe_vwap_percent) 
                     lf2hf_cond = multFramevpPOC.LFrame_vpPOC_series.iloc[-1]/multFramevpPOC.HFrame_std_0_5_up.iloc[-1] <= 1 - minus_LFramePOC_to_HFramePOC_percent_delta
-                    if rsi_ema_recent <= 45 and minus_long_cond and HF_STDLower >= cur_close:  # and LF_STDLower >= cur_close and lf2hf_cond:
+                    if minus_long_cond and HF_STDLower >= cur_close:  # and LF_STDLower >= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_long=1
                 else:  #加仓条件
                     previous_long_filllPx = buy_total_long.iloc[-1,2]
                     minus_long_cond = cur_close/previous_long_filllPx < 1-(minus_close_to_lframe_vwap_percent*2)
                     time_cond = time.time()-buy_total_long.iloc[-1,5] > 59
-                    if  (rsi_ema_recent <= 45 and time_cond and minus_long_cond):
+                    if (time_cond and minus_long_cond):
                         multiFrame_vpPOC_long=1
 
                 # if multiFrame_vpPOC_long != 1 and multiFrame_vpPOC_short != 1:
