@@ -85,9 +85,9 @@ class trade_coin(object):
         self.save_pic_counter = 0
 
         if 'ETH' in self.symbol:
-            self.asset_coe=200
+            self.asset_coe=100
         else:
-            self.asset_coe=200  #资金分配系数，5/2000
+            self.asset_coe=100  #资金分配系数，5/2000
         try:
             self.accountAPI.get_position_mode('long_short_mode')
             account_config=self.accountAPI.get_account_config()
@@ -199,8 +199,7 @@ class trade_coin(object):
             window_tau_h = window_tau_l * 10
             window_tau_s = window_tau_h * 4
             multFramevpPOC = MultiTFvpPOC(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
-            multFramevpPOC.calculate_HFrame_vpPOC_and_std(self.coin_date)
-            # rsi_ema_recent = multFramevpPOC.rsi_with_ema_smoothing(self.coin_date).iloc[-1]
+            multFramevpPOC.calculate_SFrame_vpPOC_and_std(self.coin_date)
             
             LFrame_vpPOCs = multFramevpPOC.LFrame_vpPOC_series
 
@@ -229,49 +228,33 @@ class trade_coin(object):
 
                 multiFrame_vpPOC_short = 0
                 multiFrame_vpPOC_long = 0
-                HF_STDUpper = multFramevpPOC.HFrame_std_1_5_up.iloc[-1] 
-                HF_STDLower = multFramevpPOC.HFrame_std_1_5_down.iloc[-1]
-                #不考虑rsi的话，可能小周期的3倍标准差会安全一些，考虑rsi估计用小周期的2倍标准差就可以。
-                LF_STDUpper = multFramevpPOC.LFrame_std_2_upper.iloc[-1]
-                LF_STDLower = multFramevpPOC.LFrame_std_2_lower.iloc[-1]
-                LFrame_vwap = LFrame_vpPOCs.iloc[-1]
                 
                 minus_LFramePOC_to_HFramePOC_percent_delta = 0.0001  #避免std收窄的时候还在开仓，结果开出了逆势的仓位，容易导致长期扛单。
                 minus_close_to_lframe_vwap_percent = 0.003
 
-                if 'ETH' in self.symbol or 'BTC' in self.symbol or 'SOL' in self.symbol:
-                    HF_STDUpper = multFramevpPOC.HFrame_std_1_0_up.iloc[-1]
-                    HF_STDLower = multFramevpPOC.HFrame_std_1_0_down.iloc[-1]
-                    LF_STDUpper = multFramevpPOC.LFrame_std_2_upper.iloc[-1]
-                    LF_STDLower = multFramevpPOC.LFrame_std_2_lower.iloc[-1]
-                    minus_LFramePOC_to_HFramePOC_percent_delta = minus_LFramePOC_to_HFramePOC_percent_delta/2
-                    minus_close_to_lframe_vwap_percent = minus_close_to_lframe_vwap_percent/2
-                
-                close_to_lframe_vwap_percent = cur_close/LFrame_vwap
+                HFrame_vwap_down_getin = multFramevpPOC.HFrame_vwap_down_getin.iloc[-1]
+                HFrame_vwap_up_getin = multFramevpPOC.HFrame_vwap_up_getin.iloc[-1]
+                HFrame_vwap_up_getout = multFramevpPOC.HFrame_vwap_up_getout.iloc[-1]
+                HFrame_vwap_down_getout = multFramevpPOC.HFrame_vwap_down_getout.iloc[-1]
+                minus_LFramePOC_to_HFramePOC_percent_delta = minus_LFramePOC_to_HFramePOC_percent_delta/2
+                minus_close_to_lframe_vwap_percent = minus_close_to_lframe_vwap_percent/2
+
                 is_short_un_opend = len(buy_total_short)<2
                 if is_short_un_opend:
-                    minus_short_cond = close_to_lframe_vwap_percent > (1+minus_close_to_lframe_vwap_percent) 
-                    lf2hf_cond = multFramevpPOC.LFrame_vpPOC_series.iloc[-1]/multFramevpPOC.HFrame_std_0_5_down.iloc[-1] >= 1 + minus_LFramePOC_to_HFramePOC_percent_delta
-                    if  minus_short_cond and HF_STDUpper <= cur_close:  # and LF_STDUpper <= cur_close and lf2hf_cond:
+                    if  HFrame_vwap_up_getin > cur_close:  # and LF_STDUpper <= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_short=1
                 else:  #加仓条件
-                    previous_short_filllPx = buy_total_short.iloc[-1,2]
-                    minus_short_cond = cur_close/previous_short_filllPx > 1 + (minus_close_to_lframe_vwap_percent*2)
-                    time_cond =  time.time() - buy_total_short.iloc[-1,5]>59
-                    if ( minus_short_cond and time_cond):
+                    time_cond =  time.time() - buy_total_short.iloc[-1,5]>60*5
+                    if ( HFrame_vwap_up_getin > cur_close and time_cond):
                         multiFrame_vpPOC_short=1
 
                 is_long_un_opend = len(buy_total_long)<2
                 if is_long_un_opend:
-                    minus_long_cond = close_to_lframe_vwap_percent < (1-minus_close_to_lframe_vwap_percent) 
-                    lf2hf_cond = multFramevpPOC.LFrame_vpPOC_series.iloc[-1]/multFramevpPOC.HFrame_std_0_5_up.iloc[-1] <= 1 - minus_LFramePOC_to_HFramePOC_percent_delta
-                    if minus_long_cond and HF_STDLower >= cur_close:  # and LF_STDLower >= cur_close and lf2hf_cond:
+                    if HFrame_vwap_down_getin < cur_close:  # and LF_STDLower >= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_long=1
                 else:  #加仓条件
-                    previous_long_filllPx = buy_total_long.iloc[-1,2]
-                    minus_long_cond = cur_close/previous_long_filllPx < 1-(minus_close_to_lframe_vwap_percent*2)
                     time_cond = time.time()-buy_total_long.iloc[-1,5] > 59
-                    if (time_cond and minus_long_cond):
+                    if (HFrame_vwap_down_getin < cur_close and time_cond):
                         multiFrame_vpPOC_long=1
 
                 # if multiFrame_vpPOC_long != 1 and multiFrame_vpPOC_short != 1:
@@ -279,8 +262,7 @@ class trade_coin(object):
                 #     self.cancel_order()
 
                 print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, multiFrame_vpPOC_long=={multiFrame_vpPOC_long\
-                        }, self.upl_short_open=={self.upl_short_open==1}, multiFrame_vpPOC_short=={multiFrame_vpPOC_short \
-                        }, close_to_lframe_vwap_percent={close_to_lframe_vwap_percent}, ',
+                        }, self.upl_short_open=={self.upl_short_open==1}, multiFrame_vpPOC_short=={multiFrame_vpPOC_short}, ',
                       '--3'*50)
 
                 if self.asset_normal==1 and self.upl_short_open==1 and multiFrame_vpPOC_short==1 :
@@ -292,7 +274,7 @@ class trade_coin(object):
                           price0=hh2.iloc[-1]
                           price = price0*(1-0.0002) #if is_short_un_opend else price0*(1+0.0001)  #首次开仓立刻成交。limit挂单需要配合撤单
                           fv=self.fv[self.symbol]
-                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 0.01 if ('BTC' in self.symbol or symbol != 'ETH') else 1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1)
                           symbol=self.symbol
                           place_order=self.create_order1(symbol,price,amount,model)
                           print(place_order,symbol,model)
@@ -329,7 +311,7 @@ class trade_coin(object):
                           price0=ll2.iloc[-1]
                           price=price0*(1+0.0002) #if is_long_un_opend else price0*(1-0.0001)  #首次开仓立刻成交。limit挂单需要配合撤单
                           fv=self.fv[self.symbol]
-                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 0.01 if ('BTC' in self.symbol or symbol != 'ETH') else 1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1)
                           symbol=self.symbol
                           place_order=self.create_order1(symbol,price,amount,model)
                           try:
@@ -390,7 +372,7 @@ class trade_coin(object):
 
                     cross_hframe_poc_min_profit = 0.007
                     if amount_short>0 and (upl_short/notionalUsd_short>stop_profit or
-                                           (upl_short/notionalUsd_short > cross_hframe_poc_min_profit and cur_close <= multFramevpPOC.HFrame_vpPOC.iloc[-1])):
+                                           (cur_close <= HFrame_vwap_down_getout)):
                         model='sellshort'
                         price0=cur_close
                         price=price0*(1+0.0001)
@@ -404,8 +386,7 @@ class trade_coin(object):
                         pk1 = open(root+'/buy_total_short_%s_%s.spydata'%(self.symbol,self.user),'wb')
                         pickle.dump(buy_total,pk1)
                         pk1.close()
-                    if amount_long>0 and (upl_long/notionalUsd_long>stop_profit or
-                                          (upl_long/notionalUsd_long > cross_hframe_poc_min_profit and cur_close >= multFramevpPOC.HFrame_vpPOC.iloc[-1])):
+                    if amount_long>0 and (upl_long/notionalUsd_long>stop_profit or cur_close >= HFrame_vwap_up_getout):
                         model='selllong'
                         price0=cur_close
                         price=price0*(1.00 - 0.0001)
@@ -544,7 +525,8 @@ class trade_coin(object):
         #     self.coin_data = split_each_kline_row_to_micro_klines(self.coin_data, n_splits=micro_split).reset_index(drop=True)
 
         csv_path = "btc_10s_ohlcv.csv"
-        self.coin_data = pd.read_csv(csv_path)
+        d = pd.read_csv(csv_path)
+        self.coin_data = d.iloc[-min(2000, len(d)):]
         return self.coin_data
 
     def create_order1(self,symbol,price,amount,model,tag="520ccb3f7df2SUDE"):#bef23d76c2f8SUDE model:buylong ,buyshort ,selllong ,sellshort ,buycash ,sellcash
