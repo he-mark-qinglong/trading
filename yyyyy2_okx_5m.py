@@ -35,6 +35,37 @@ flag='0'
 
 from LHFrameStd import MultiTFvpPOC, plot_all_multiftfpoc_vars
 
+def split_each_kline_row_to_micro_klines(df, n_splits=6):
+    """
+    将每一条K线均匀拆分为n_splits份
+    适用于字段：['ts','open','high','low','close','vol','datetime']
+    """
+    rows = []
+    for _, row in df.iterrows():
+        start_ts = int(row['ts'])
+        end_ts = int(row['ts']) + 60000  # 假设1min K线
+        dts = np.linspace(start_ts, end_ts, n_splits+1, endpoint=True)
+        # open/close线性插值
+        opens = np.linspace(row['open'], row['close'], n_splits+1)[:-1]
+        closes = np.linspace(row['open'], row['close'], n_splits+1)[1:]
+        # high/low/vol均分
+        highs = np.full(n_splits, row['high']/n_splits)
+        lows  = np.full(n_splits, row['low']/n_splits)
+        vols  = np.full(n_splits, row['vol']/n_splits)
+        # 构造每小K
+        for i in range(n_splits):
+            rows.append({
+                'ts':      int(dts[i]),
+                'open':    opens[i],
+                'high':    highs[i],
+                'low':     lows[i],
+                'close':   closes[i],
+                'vol':     vols[i],
+                'datetime': pd.to_datetime(int(dts[i]), unit='ms')
+            })
+    return pd.DataFrame(rows)
+
+
 class trade_coin(object):
     def __init__(self,symbol,user,asset ):
         acclist = self.import_account()
@@ -164,7 +195,7 @@ class trade_coin(object):
             4	收盘价 (Close)	该时间周期的收盘价格
             5	成交量 (Volume)	该时间周期的成交量或成交额
             '''
-            window_tau_l = 12
+            window_tau_l = int(12)
             window_tau_h = window_tau_l * 10
             window_tau_s = window_tau_h * 4
             multFramevpPOC = MultiTFvpPOC(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
@@ -476,37 +507,44 @@ class trade_coin(object):
         self.coin_data: 历史拼接过的数据
         self.last_timestamp: 记录最后K线的时间戳
         """
-        if init or not hasattr(self, 'coin_data'):
-            limit = 1000   # 首次拉大量
-            since = ''     # 拉最新
-        else:
-            limit = 5      # 只拉一点点
-            since = ''     # 部分接口有from/to。也可以通过API参数指定传入last_timestamp
+        # if init or not hasattr(self, 'coin_data'):
+        #     limit = 1000   # 首次拉大量
+        #     since = ''     # 拉最新
+        # else:
+        #     limit = 5      # 只拉一点点
+        #     since = ''     # 部分接口有from/to。也可以通过API参数指定传入last_timestamp
 
-        # 拉取数据
-        result = self.marketAPI.get_candlesticks(self.symbol, '', '', '1m', limit=limit)
-        klist = result['data']   # 或 result.index
-        if not klist: return
+        # # 拉取数据
+        # result = self.marketAPI.get_candlesticks(self.symbol, '', '', '1m', limit=limit)
+        # klist = result['data']   # 或 result.index
+        # if not klist: return
 
-        # 转df
-        df = pd.DataFrame([[int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])] for row in klist],
-                        columns=['ts','open','high','low','close','vol'])
+        # # 转df
+        # df = pd.DataFrame([[int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])] for row in klist],
+        #                 columns=['ts','open','high','low','close','vol'])
 
-        # 时间从大到小排，去重
-        df = df.sort_values('ts').drop_duplicates('ts')
+        # # 时间从大到小排，去重
+        # df = df.sort_values('ts').drop_duplicates('ts')
         
-        df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
+        # df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
 
-        if init or not hasattr(self, 'coin_data'):
-            self.coin_data = df.copy()
-        else:
-            # 只追加新K线（时间大于last_timestamp）
-            df_new = df[df['ts'] > self.last_timestamp]
-            if not df_new.empty:
-                self.coin_data = pd.concat([self.coin_data, df_new], axis=0).drop_duplicates('ts').reset_index(drop=True)
-        # 更新last_timestamp
-        self.last_timestamp = self.coin_data['ts'].max()
-        self.coin_data = self.coin_data.sort_values('ts', ascending=False).reset_index(drop=True)
+        # if init or not hasattr(self, 'coin_data'):
+        #     self.coin_data = df.copy()
+        # else:
+        #     # 只追加新K线（时间大于last_timestamp）
+        #     df_new = df[df['ts'] > self.last_timestamp]
+        #     if not df_new.empty:
+        #         self.coin_data = pd.concat([self.coin_data, df_new], axis=0).drop_duplicates('ts').reset_index(drop=True)
+        # # 更新last_timestamp
+        # self.last_timestamp = self.coin_data['ts'].max()
+        # self.coin_data = self.coin_data.sort_values('ts', ascending=True).reset_index(drop=True)
+
+        # micro_split = None
+        # if micro_split is not None:
+        #     self.coin_data = split_each_kline_row_to_micro_klines(self.coin_data, n_splits=micro_split).reset_index(drop=True)
+
+        csv_path = "btc_10s_ohlcv.csv"
+        self.coin_data = pd.read_csv(csv_path)
         return self.coin_data
 
     def create_order1(self,symbol,price,amount,model,tag="520ccb3f7df2SUDE"):#bef23d76c2f8SUDE model:buylong ,buyshort ,selllong ,sellshort ,buycash ,sellcash
@@ -756,12 +794,12 @@ if __name__=='__main__':
             time11=time1.hour*100+time1.minute
             week_day=time1.isoweekday()
             threads=[]
-            t1 = threading.Thread(target = aa1.trade1) 
-            threads.append(t1)
-            t2 = threading.Thread(target = aa2.trade1) 
-            threads.append(t2)
-            t3 = threading.Thread(target = aa3.trade1) 
-            threads.append(t3)
+            # t1 = threading.Thread(target = aa1.trade1) 
+            # threads.append(t1)
+            # t2 = threading.Thread(target = aa2.trade1) 
+            # threads.append(t2)
+            # t3 = threading.Thread(target = aa3.trade1) 
+            # threads.append(t3)
             # t4 = threading.Thread(target = aa4.trade1) 
             # threads.append(t4)
             # t5 = threading.Thread(target = aa5.trade1) 

@@ -79,6 +79,80 @@ def vpvr_pct_band_vwap_boundary_series(src, vol, length, bins, pct, decay, vwap_
 
     return pd.Series(band_low, index=index), pd.Series(band_high, index=index)
     
+def vpvr_pct_band_vwap_decay_series(src, vol, length, bins, pct, decay):
+    """
+    输入:
+        src, vol: pd.Series (或可转Series的一维结构)
+        length: 窗口长度
+        bins: 分桶数
+        pct: 累计volume覆盖比例 (如0.7)
+        decay: 衰减系数 (如0.995)
+    输出:
+        pd.Series: 每根K线vwap, index与输入对齐
+    """
+    src = pd.Series(src)
+    vol = pd.Series(vol)
+    index = src.index
+    result = np.full(len(src), np.nan)
+
+    for end in range(length - 1, len(src)):
+        slc = slice(end - length + 1, end + 1)
+        s = src.iloc[slc].values
+        v = vol.iloc[slc].values
+
+        lowv, highv = np.min(s), np.max(s)
+        binsize = max((highv - lowv) / bins, 1e-8)
+        accum = np.zeros(bins)
+
+        for j in range(length):
+            pricej = s[j]
+            volj = v[j]
+            weightj = decay ** (length - 1 - j)
+            bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
+            bini = max(0, min(bins - 1, bini))
+            accum[bini] += volj * weightj
+
+        total_vol = np.sum(accum)
+        if total_vol == 0:
+            continue
+
+        center_idx = np.argmax(accum)
+        sum_vol = accum[center_idx]
+        left_idx = center_idx
+        right_idx = center_idx
+
+        while sum_vol < total_vol * pct:
+            add_left = accum[left_idx - 1] if left_idx > 0 else -1
+            add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
+            if add_left >= add_right:
+                if left_idx > 0:
+                    left_idx -= 1
+                    sum_vol += accum[left_idx]
+                elif right_idx < bins - 1:
+                    right_idx += 1
+                    sum_vol += accum[right_idx]
+                else:
+                    break
+            else:
+                if right_idx < bins - 1:
+                    right_idx += 1
+                    sum_vol += accum[right_idx]
+                elif left_idx > 0:
+                    left_idx -= 1
+                    sum_vol += accum[left_idx]
+                else:
+                    break
+
+        wsum, pvsum = 0.0, 0.0
+        for i in range(left_idx, right_idx + 1):
+            v_i = accum[i]
+            price_i = lowv + binsize * (i + 0.5)
+            wsum += v_i
+            pvsum += v_i * price_i
+        result[end] = pvsum / wsum if wsum > 0 else np.nan
+
+    return pd.Series(result, index=index)
+
 class MultiTFvpPOC:  
     def __init__(self,  
                  lambd=0.03,  
@@ -98,10 +172,7 @@ class MultiTFvpPOC:
         # 预定义所有结果属性为None  
         self.LFrame_vpPOC_series = None  
         self.LFrame_ohlc5_series = None  
-        self.LFrame_rolling_std = None  
-        self.LFrame_std_2_upper = None  
-        self.LFrame_std_2_lower = None  
-
+       
 
         self.HFrame_vpPOC = None  
         self.HFrame_ohlc5_series = None  
@@ -119,126 +190,12 @@ class MultiTFvpPOC:
         self.HFrame_std_3_0_up = None  
         self.HFrame_std_3_0_down = None  
         self.HFrame_std_3_5_up = None  
-        self.HFrame_std_3_5_down = None  
-
-    @staticmethod  
-    def calculate_ohlc5(coin_date_df: pd.DataFrame) -> pd.Series:  
-        return coin_date_df.iloc[:, 4]
+        self.HFrame_std_3_5_down = None 
     
-        open_ = coin_date_df.iloc[:, 1]  
-        high = coin_date_df.iloc[:, 2]  
-        low = coin_date_df.iloc[:, 3]  
-        close = coin_date_df.iloc[:, 4]  
-
-        weights_l, weights_c, weights_h, weights_o = 1.5, 2.0, 1.5, 0.5  
-        weight_sum = weights_l + weights_c + weights_h + weights_o  
-
-        ohlc5 = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
-        return ohlc5  
-
-    def twpoc_calc_with_lambda_for_LFrame(self, coin_date_df ):  
-        open_ = coin_date_df.iloc[:, 1]  
-        high = coin_date_df.iloc[:, 2]  
-        low = coin_date_df.iloc[:, 3]  
-        close = coin_date_df.iloc[:, 4]  
-        volume = coin_date_df.iloc[:, 5]  
-
-        decay = np.exp(-self.lambd)  
-        n = len(coin_date_df)  
-        twpoc_values = np.full(n, np.nan)  
-
-        for idx in range(n):  
-            start_idx = max(0, idx - self.window_LFrame + 1)  
-            sub_open = open_.iloc[start_idx:idx + 1]  
-            sub_high = high.iloc[start_idx:idx + 1]  
-            sub_low = low.iloc[start_idx:idx + 1]  
-            sub_close = close.iloc[start_idx:idx + 1]  
-            sub_volume = volume.iloc[start_idx:idx + 1]  
-
-            origin_LFrame_vpPOC = np.average(sub_close, weights=sub_volume) if sub_volume.sum() > 0 else np.nan  
-
-            if np.isnan(origin_LFrame_vpPOC):  
-                twpoc_values[idx] = np.nan  
-                continue  
-
-            # 区分上涨和下跌通过最后一个收盘和vpPOC比较，直接区分weight结构  
-            if sub_close.iloc[-1] >= origin_LFrame_vpPOC:  
-                weights_l, weights_c, weights_h, weights_o = 1.25, 2.0, 1.75, 0.5  
-            else:  
-                weights_l, weights_c, weights_h, weights_o = 1.75, 2.0, 1.25, 0.5  
-            weight_sum = weights_l + weights_c + weights_h + weights_o  
-
-            ohlc5 = (sub_low * weights_l + sub_close * weights_c + sub_high * weights_h + sub_open * weights_o) / weight_sum  
-
-            twpoc_num = 0.0  
-            twpoc_den = 0.0  
-            length = len(sub_close)  
-
-            for i in range(length):  
-                w = decay ** i  
-                price = ohlc5.iloc[length - 1 - i]  
-                vol = sub_volume.iloc[length - 1 - i]  
-                twpoc_num += price * vol * w  
-                twpoc_den += vol * w  
-
-            twpoc_values[idx] = twpoc_num / twpoc_den if twpoc_den > 0 else np.nan  
-
-        return pd.Series(twpoc_values, index=coin_date_df.index)   
-    
-    def twpoc_calc_with_lambda_for_HFrame(self, coin_date_df):  
-        open_ = coin_date_df.iloc[:, 1]  
-        high = coin_date_df.iloc[:, 2]  
-        low = coin_date_df.iloc[:, 3]  
-        close = coin_date_df.iloc[:, 4]  
-        volume = coin_date_df.iloc[:, 5]  
-
-        decay = np.exp(-self.lambd)  
-        n = len(coin_date_df)  
-        window = self.window_HFrame  
-
-        twpoc_values = np.full(n, np.nan)  
-
-        for idx in range(n):  
-            start_idx = max(0, idx - window + 1)  
-            sub_open = open_.iloc[start_idx:idx + 1]  
-            sub_high = high.iloc[start_idx:idx + 1]  
-            sub_low = low.iloc[start_idx:idx + 1]  
-            sub_close = close.iloc[start_idx:idx + 1]  
-            sub_volume = volume.iloc[start_idx:idx + 1]  
-
-            origin_HFrame_vpPOC = np.average(sub_close, weights=sub_volume) if sub_volume.sum() > 0 else np.nan  
-
-            if np.isnan(origin_HFrame_vpPOC):  
-                twpoc_values[idx] = np.nan  
-                continue  
-
-            # 直接区分上涨下跌决定加权参数  
-            if sub_close.iloc[-1] >= origin_HFrame_vpPOC:  
-                weights_l, weights_c, weights_h, weights_o = 1.25, 2.0, 1.75, 0.5  
-            else:  
-                weights_l, weights_c, weights_h, weights_o = 1.75, 2.0, 1.25, 0.5  
-            weight_sum = weights_l + weights_c + weights_h + weights_o  
-
-            ohlc5 = (sub_low * weights_l + sub_close * weights_c + sub_high * weights_h + sub_open * weights_o) / weight_sum  
-
-            twpoc_num = 0.0  
-            twpoc_den = 0.0  
-            length = len(sub_close)  
-
-            for i in range(length):  
-                w = decay ** i  
-                price = ohlc5.iloc[length - 1 - i]  
-                vol = sub_volume.iloc[length - 1 - i]  
-                twpoc_num += price * vol * w  
-                twpoc_den += vol * w  
-
-            twpoc_values[idx] = twpoc_num / twpoc_den if twpoc_den > 0 else np.nan  
-
-        return pd.Series(twpoc_values, index=coin_date_df.index)  
     
     def calculate_HFrame_vpPOC_and_std(self, coin_date_df):  
-        self.LFrame_vpPOC_series = self.twpoc_calc_with_lambda_for_LFrame(coin_date_df)  
-
+        self.LFrame_vpPOC_series = vpvr_pct_band_vwap_decay_series(coin_date_df['close'], coin_date_df['vol'], self.window_LFrame, 40, 0.995, 0.99)
+        
         open_ = coin_date_df.iloc[:, 1]  
         high = coin_date_df.iloc[:, 2]  
         low = coin_date_df.iloc[:, 3]  
@@ -247,21 +204,13 @@ class MultiTFvpPOC:
         weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
         weight_sum = weights_l + weights_c + weights_h + weights_o  
         ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
-        self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
-
-        self.LFrame_rolling_std = self.LFrame_vpPOC_series.rolling(window=self.std_window_LFrame, min_periods=1).std()  
-        self.LFrame_rolling_std.index = coin_date_df.index  
-
-
-        self.LFrame_std_2_upper = self.LFrame_vpPOC_series + 2 * self.LFrame_rolling_std  * self.golden_split_factor
-        self.LFrame_std_2_lower = self.LFrame_vpPOC_series - 2 * self.LFrame_rolling_std  * self.golden_split_factor
-
-        self.HFrame_vpPOC = self.twpoc_calc_with_lambda_for_HFrame(coin_date_df)  
+        # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
+        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)  
+        self.HFrame_vpPOC =  vpvr_pct_band_vwap_decay_series(coin_date_df['close'], coin_date_df['vol'], self.window_HFrame, 40, 0.995, 0.99)   
         self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
 
         self.HFrame_price_std = self.HFrame_ohlc5_series.rolling(window=self.window_HFrame, min_periods=1).std()  
         self.HFrame_price_std.index = coin_date_df.index  
-
         
         multipliers = [0.5, 1.0, 1.5, 2.0] 
         for m in multipliers:  
@@ -283,42 +232,42 @@ class MultiTFvpPOC:
         setattr(self, f'HFrame_vwap_up', high_poc)  
         setattr(self, f'HFrame_vwap_down', low_poc) 
 
-    def rsi_with_ema_smoothing(self, coin_date_df, length=13):  
-        close = coin_date_df.iloc[:, 4]  
+    # def rsi_with_ema_smoothing(self, coin_date_df, length=13):  
+    #     close = coin_date_df.iloc[:, 4]  
 
-        delta = close.diff(1)
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
+    #     delta = close.diff(1)
+    #     gain = delta.clip(lower=0)
+    #     loss = -delta.clip(upper=0)
 
-        gain.iloc[0] = 0
-        loss.iloc[0] = 0
+    #     gain.iloc[0] = 0
+    #     loss.iloc[0] = 0
 
-        avg_gain = gain.rolling(window=length, min_periods=length).mean()
-        avg_loss = loss.rolling(window=length, min_periods=length).mean()
+    #     avg_gain = gain.rolling(window=length, min_periods=length).mean()
+    #     avg_loss = loss.rolling(window=length, min_periods=length).mean()
 
-        # 将初始值赋到第length-1的位置，前面都是NaN
-        avg_gain = avg_gain.to_numpy()
-        avg_loss = avg_loss.to_numpy()
-        gain = gain.to_numpy()
-        loss = loss.to_numpy()
+    #     # 将初始值赋到第length-1的位置，前面都是NaN
+    #     avg_gain = avg_gain.to_numpy()
+    #     avg_loss = avg_loss.to_numpy()
+    #     gain = gain.to_numpy()
+    #     loss = loss.to_numpy()
 
-        # 从length位置开始迭代计算后续avg_gain和avg_loss
-        for i in range(length, len(close)):  
-            avg_gain[i] = (avg_gain[i - 1] * (length - 1) + gain[i]) / length  
-            avg_loss[i] = (avg_loss[i - 1] * (length - 1) + loss[i]) / length  
+    #     # 从length位置开始迭代计算后续avg_gain和avg_loss
+    #     for i in range(length, len(close)):  
+    #         avg_gain[i] = (avg_gain[i - 1] * (length - 1) + gain[i]) / length  
+    #         avg_loss[i] = (avg_loss[i - 1] * (length - 1) + loss[i]) / length  
 
-        rs = avg_gain / avg_loss
-        # 转回pd.Series，并赋予index
-        rsi_raw = pd.Series(100 - 100 / (1 + rs), index=close.index)
+    #     rs = avg_gain / avg_loss
+    #     # 转回pd.Series，并赋予index
+    #     rsi_raw = pd.Series(100 - 100 / (1 + rs), index=close.index)
 
-        # 处理除零及特殊情况
-        rsi_raw[avg_loss == 0] = 100
-        rsi_raw[(avg_gain == 0) & (avg_loss == 0)] = 0
+    #     # 处理除零及特殊情况
+    #     rsi_raw[avg_loss == 0] = 100
+    #     rsi_raw[(avg_gain == 0) & (avg_loss == 0)] = 0
 
-        # EMA平滑
-        rsi_ema = rsi_raw.ewm(alpha=2/(length+1), adjust=False, min_periods=length).mean()
+    #     # EMA平滑
+    #     rsi_ema = rsi_raw.ewm(alpha=2/(length+1), adjust=False, min_periods=length).mean()
         
-        return rsi_ema
+    #     return rsi_ema
 
 import os
 import time
