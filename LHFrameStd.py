@@ -224,8 +224,8 @@ class MultiTFvpPOC:
         self.HFrame_vwap_up_getout = ta.rma(high_poc - self.HFrame_price_std, length=self.window_LFrame)
 
         self.HFrame_vwap_down = ta.rma(low_poc, length=self.window_LFrame)
-        self.HFrame_vwap_down_getin = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
-        self.HFrame_vwap_down_getout = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
+        self.HFrame_vwap_down_getin = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
+        self.HFrame_vwap_down_getout = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
 
 
 import os
@@ -296,7 +296,28 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     plt.close(fig)
     print(f"Plot saved to file: {filename}")
 
+def calc_atr(df, period=14, high_col="high", low_col="low", close_col="close"):
+    """
+    计算ATR并返回Series，可自动识别DataFrame列名
+    Params:
+        df      -- 带有high/low/close列的DataFrame
+        period  -- ATR窗口期（默认14）
+        high_col, low_col, close_col -- 列名，如自定义表头可改
+    Returns:
+        Series: ATR序列。如需直接加列可用 df['ATR'] = ...
+    """
+    high = df[high_col]
+    low  = df[low_col]
+    close = df[close_col]
+    prev_close = close.shift(1)
 
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    return atr
 
 def rsi_with_ema_smoothing(coin_date_df, length=13):  
     close = coin_date_df.iloc[:, 4]  

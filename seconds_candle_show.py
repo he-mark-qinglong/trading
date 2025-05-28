@@ -4,13 +4,13 @@ from dash.dependencies import Input, Output
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import os
-
-csv_path = "btc_10s_ohlcv.csv"
+symbol = "ETH-USDT-SWAP"
+csv_path = symbol + "_4s_ohlcv.csv"
 
 app = Dash(__name__)
 
 app.layout = html.Div([
-    html.H2("OKX 10s K-line OHLCV (Auto-refresh)"),
+    html.H2("OKX 4s K-line OHLCV (Auto-refresh)"),
     dcc.Graph(id="kline-graph"),
     dcc.Interval(id='interval', interval=5*1000, n_intervals=0),
     html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
@@ -51,7 +51,7 @@ def update_graph(n):
             high=df["high"],
             low=df["low"],
             close=df["close"],
-            name="10s-K"
+            name="4s-K"
         ), row=1, col=1)
 
         # 成交量

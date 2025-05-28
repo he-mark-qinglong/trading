@@ -64,9 +64,10 @@ async def _collect_trades_and_save_once(symbol="BTC-USDT-SWAP", interval=10, sav
                 cache = []
                 interval_start = now
 
-async def collect_trades_and_save(symbol="BTC-USDT-SWAP", interval=10, save_path="btc_10s_ohlcv.csv"):
+async def collect_trades_and_save(symbol="BTC-USDT-SWAP", interval=4):
     while True:
         try:
+            save_path = symbol+'_4s_ohlcv.csv'
             await _collect_trades_and_save_once(symbol, interval, save_path)
         except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK) as e:
             print(f"Websocket connection closed: {e}. Retrying in 2s...")
@@ -76,4 +77,4 @@ async def collect_trades_and_save(symbol="BTC-USDT-SWAP", interval=10, save_path
             await asyncio.sleep(15)
 
 if __name__ == "__main__":
-    asyncio.run(collect_trades_and_save())
+    asyncio.run(collect_trades_and_save(symbol="ETH-USDT-SWAP"))
