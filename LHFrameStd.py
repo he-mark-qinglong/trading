@@ -397,7 +397,7 @@ class MultiTFvpPOC:
         HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
 
         # ohlc5标准差, 按HFrame_vpLen窗口计算
-        self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.8 + HFrame_max_swing * 0.2
+        self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
         self.HFrame_price_std.index = coin_date_df.index  
 
 
@@ -490,7 +490,12 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False):
 
     save_dir = "plots"
     os.makedirs(save_dir, exist_ok=True)
-    timestamp = int(time.time())
+
+    from datetime import datetime
+    # 年月日_时-分-秒 (更可读)
+    timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]  # 去掉后3位微秒
+    # 输出: 20250531_09-04-50_629
+
     prefix = f"{symbol}_" if symbol else ""
     if is_trading:
         prefix = f"trade_{prefix}" 
@@ -498,6 +503,7 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False):
     fig.savefig(filename)
     plt.close(fig)
     print(f"Plot saved to file: {filename}")
+
 
 def calc_atr(df, period=14, high_col="high", low_col="low", close_col="close"):
     """
@@ -558,3 +564,4 @@ def rsi_with_ema_smoothing(coin_date_df, length=13):
     rsi_ema = rsi_raw.ewm(alpha=2/(length+1), adjust=False, min_periods=length).mean()
     
     return rsi_ema
+

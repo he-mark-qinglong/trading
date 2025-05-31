@@ -34,6 +34,7 @@ ABSPATH=os.path.dirname(ABSPATH)+"/"
 flag='0'
 
 from LHFrameStd import MultiTFvpPOC, plot_all_multiftfpoc_vars, calc_atr
+import support_resistance
 
 def get_martingale_coefficient(counter, base=1.2, delta=0.1):
     if counter <= 1:
@@ -57,11 +58,13 @@ class trade_coin(object):
         self.asset_time=0
         self.asset_record = deque(maxlen=1440)
 
-        self.save_pic_interval = 5
+        self.save_pic_interval = 2
         self.save_pic_counter = 0
 
         self.long_append_counter = 1
         self.short_append_counter = 1
+        self.short_order_record_time = None
+        self.long_order_record_time = None
 
         if 'ETH' in self.symbol:
             self.asset_coe=100
@@ -113,7 +116,7 @@ class trade_coin(object):
                 pickle.dump(buy_total,pk1)
                 pk1.close()
         self.get_kline(init=True)
-    
+
     def trade1(self):
         try:
             print('运行中',self.symbol)
@@ -182,18 +185,6 @@ class trade_coin(object):
             
             LFrame_vpPOCs = multFramevpPOC.LFrame_vpPOC_series
 
-            if self.save_pic_counter % self.save_pic_interval == 0:
-                plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol, False)
-                time.sleep(0.1)
-            #     # from vpvr_gmm_splited import VPVRAnalyzer
-            #     # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
-            #     # result = analyzer.run(self.symbol)
-            #     # print(result['regions'])
-                
-                if self.save_pic_counter >= 4294967296-1:  #2**32 - 1, avoid value overflow
-                    self.save_pic_counter = 1
-            self.save_pic_counter += 1
-
             if 1:
                 '''开平仓信号计算'''
                 print ("\t 开仓信号计算 开始 %s" %time.ctime())
@@ -220,30 +211,49 @@ class trade_coin(object):
                 cur_high = hh2.iloc[-1]
                 is_short_un_opend = len(buy_total_short)<2
                 if is_short_un_opend:
-                    if  (HFrame_vwap_up_getin < cur_close or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)) and HFrame_vwap_up_sl > cur_high:  # and LF_STDUpper <= cur_close and lf2hf_cond:
+                    if  (HFrame_vwap_up_getin < cur_close \
+                         or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)) \
+                            and not HFrame_vwap_up_sl >= cur_close: 
                         multiFrame_vpPOC_short=1
                         self.short_append_counter += 1
+                        self.short_order_record_time = time.time()
                 else:  #加仓条件
                     time_cond =  time.time() - buy_total_short.iloc[-1,5]>20*self.short_append_counter
-                    if ( HFrame_vwap_up_getin <= cur_close or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)) and time_cond:
+                    if ( support_resistance.consecutive_above_resistance(close, multFramevpPOC.HFrame_vwap_up )\
+                            or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)\
+                                or (HFrame_vwap_up_getin <= cur_close )) \
+                        and time_cond:
                         multiFrame_vpPOC_short=1
 
                         self.short_append_counter += 1
+                        self.short_order_record_time = time.time()
 
                 cur_low = ll2.iloc[-1]
                 is_long_un_opend = len(buy_total_long)<2
                 if is_long_un_opend:
-                    if (HFrame_vwap_down_getin > cur_close or (cur_close < HFrame_vwap_down_poc and cur_low  < HFrame_vwap_down_getin)) and HFrame_vwap_down_sl < cur_low:  # and LF_STDLower >= cur_close and lf2hf_cond:
+                    if (HFrame_vwap_down_getin > cur_close \
+                        or (cur_close < HFrame_vwap_down_poc and cur_low  < HFrame_vwap_down_getin)) \
+                            and not HFrame_vwap_down_sl <= cur_close:  
+                        
                         multiFrame_vpPOC_long=1
                         self.long_append_counter += 1
+                        self.long_order_record_time = time.time()
                 else:  #加仓条件
                     time_cond = time.time()-buy_total_long.iloc[-1,5] > 20*self.long_append_counter
-                    if (HFrame_vwap_down_getin > cur_close or (cur_close < HFrame_vwap_down_poc and cur_low < HFrame_vwap_down_getin)) and time_cond:
+                    if (support_resistance.consecutive_below_support(close, multFramevpPOC.HFrame_vwap_down)  \
+                            or (cur_close < HFrame_vwap_down_poc and cur_low < HFrame_vwap_down_getin)) \
+                                or HFrame_vwap_down_getin > cur_close \
+                        and time_cond:
+
                         multiFrame_vpPOC_long=1
                         self.long_append_counter += 1
+                        self.long_order_record_time = time.time()
 
-                if multiFrame_vpPOC_long != 1 and multiFrame_vpPOC_short != 1:
+                if multiFrame_vpPOC_short != 1 and (self.short_order_record_time != None and time.time() - self.short_order_record_time > 20)\
+                    and multiFrame_vpPOC_long != 1 and (self.long_order_record_time != None and time.time() - self.long_order_record_time > 20):
                     self.cancel_order()
+                    self.long_order_record_time = None
+                    self.short_order_record_time = None
 
                 print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, multiFrame_vpPOC_long=={multiFrame_vpPOC_long\
                         }, self.upl_short_open=={self.upl_short_open==1}, multiFrame_vpPOC_short=={multiFrame_vpPOC_short}, ',
@@ -448,6 +458,16 @@ class trade_coin(object):
                               logging.info(('多单止损e',symbol,e))
                               print('selllong erro1',e)
                 
+                if self.save_pic_counter % self.save_pic_interval == 0:
+                    plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol, False)
+                #     # from vpvr_gmm_splited import VPVRAnalyzer
+                #     # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
+                #     # result = analyzer.run(self.symbol)
+                #     # print(result['regions'])
+                    
+                    if self.save_pic_counter >= 4294967296-1:  #2**32 - 1, avoid value overflow
+                        self.save_pic_counter = 1
+                self.save_pic_counter += 1
         except Exception as e:
             time.sleep(2)
             traceback.print_exc()
@@ -767,9 +787,9 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(1)
+                time.sleep(0.2)
                 if i%3==0:
-                    time.sleep(3)
+                    time.sleep(1)
             for t in threads:
                 t.join()
         except:
