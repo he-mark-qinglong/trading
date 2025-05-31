@@ -5,79 +5,6 @@ import pandas_ta as ta
 import numpy as np
 import pandas as pd
 
-# def vpvr_pct_band_vwap_boundary_series(src, vol, length, bins, pct, decay, vwap_series):
-#     """
-#     输入:
-#         src, vol, vwap_series: pd.Series, 价格、成交量、vwap等
-#         length: 滑窗长度
-#         bins: 分桶数
-#         pct: 累计包含的成交量比例，0~1
-#         decay: 时间加权衰减因子
-#     输出:
-#         pd.DataFrame：index与输入一致，含 band_low/band_high/vwap 三列
-#     """
-#     src = pd.Series(src)
-#     vol = pd.Series(vol)
-#     vwap_series = pd.Series(vwap_series)
-#     index = src.index
-#     band_low = np.full(len(src), np.nan)
-#     band_high = np.full(len(src), np.nan)
-#     for end in range(length-1, len(src)):
-#         slc = slice(end-length+1, end+1)
-#         s = src.iloc[slc].values
-#         v = vol.iloc[slc].values
-#         vv = vwap_series.iloc[end]
-#         lowv = np.min(s)
-#         highv = np.max(s)
-#         binsize = max((highv - lowv) / bins, 1e-8)
-#         accum = np.zeros(bins)
-#         for j in range(length):
-#             pricej = s[j]
-#             volj   = v[j]
-#             weightj = decay**(length - 1 - j)
-#             bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
-#             bini = max(0, min(bins - 1, bini))
-#             accum[bini] += volj * weightj
-#         total_vol = np.sum(accum)
-#         if total_vol == 0:
-#             continue
-#         # 找最大积点（POC）的位置
-#         center_idx = np.argmax(accum)
-#         sum_vol = accum[center_idx]
-#         left_idx = center_idx
-#         right_idx = center_idx
-#         while sum_vol < total_vol * pct:
-#             add_left = accum[left_idx - 1] if left_idx > 0 else -1
-#             add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
-#             if add_left >= add_right:
-#                 if left_idx > 0:
-#                     left_idx -= 1
-#                     sum_vol += accum[left_idx]
-#                 elif right_idx < bins - 1:
-#                     right_idx += 1
-#                     sum_vol += accum[right_idx]
-#                 else:
-#                     break
-#             else:
-#                 if right_idx < bins - 1:
-#                     right_idx += 1
-#                     sum_vol += accum[right_idx]
-#                 elif left_idx > 0:
-#                     left_idx -= 1
-#                     sum_vol += accum[left_idx]
-#                 else:
-#                     break
-#         # 计算边界加权均价
-#         # 下边界
-#         vlow = accum[left_idx]
-#         pricelow = lowv + binsize * (left_idx + 0.5)
-#         band_low[end] = (vlow * pricelow) / vlow if vlow > 0 else np.nan
-#         # 上边界
-#         vhigh = accum[right_idx]
-#         pricehigh = lowv + binsize * (right_idx + 0.5)
-#         band_high[end] = (vhigh * pricehigh) / vhigh if vhigh > 0 else np.nan
-
-#     return pd.Series(band_low, index=index), pd.Series(band_high, index=index)
 def vpvr_pct_band_vwap_boundary_enhanced(src, open_prices, close_prices, vol, length, bins, pct, decay, 
                                        vwap_series=None, use_delta=False, use_vol_filter=False, 
                                        use_external_vwap=False):
@@ -367,23 +294,38 @@ class MultiTFvpPOC:
     
     
     def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
-        self.LFrame_vpPOC_series = vpvr_pct_band_vwap_decay_series(coin_date_df['close'], coin_date_df['vol'], self.window_LFrame, 40, 0.995, 0.99)
-        
-        open_ = coin_date_df.iloc[:, 1]  
-        high = coin_date_df.iloc[:, 2]  
-        low = coin_date_df.iloc[:, 3]  
-        close = coin_date_df.iloc[:, 4]  
+        open_ = coin_date_df['open']
+        high = coin_date_df['high']
+        low = coin_date_df['low']  
+        close = coin_date_df['close']  
+        vol = coin_date_df['vol']
 
-        weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
-        weight_sum = weights_l + weights_c + weights_h + weights_o  
-        ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
+        self.LFrame_vpPOC_series = vpvr_pct_band_vwap_decay_series(close, vol, self.window_LFrame, 40, 0.995, 0.99)
+         
+        self.SFrame_vpPOC =  vpvr_pct_band_vwap_decay_series(close, vol, self.window_SFrame, 40, 0.995, 0.99)   
+
+        low_poc, high_poc = vpvr_pct_band_vwap_boundary_enhanced(
+                    src=coin_date_df['close'],
+                    open_prices=coin_date_df['open'],
+                    close_prices=coin_date_df['close'],
+                    vol=coin_date_df['vol'],
+                    length=self.window_SFrame,         # 滑动窗口长度
+                    bins=40,
+                    pct=0.95,
+                    decay=0.995,
+                    vwap_series=self.SFrame_vpPOC   # vwap请提前自行计算、赋值
+                )
+        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index) 
+       
+
+        # weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
+        # weight_sum = weights_l + weights_c + weights_h + weights_o  
+        # ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
         # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
-        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)  
-        self.SFrame_vpPOC =  vpvr_pct_band_vwap_decay_series(coin_date_df['close'], coin_date_df['vol'], self.window_SFrame, 40, 0.995, 0.99)   
+        
         self.SFrame_vpPOC = ta.rma(self.SFrame_vpPOC, length=self.window_LFrame)
         self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
 
-        self.HFrame_price_std = self.HFrame_ohlc5_series.rolling(window=self.window_HFrame, min_periods=1).std()  
         # 假设 close, SFrame_vpPOC, ohlc5 为 pd.Series
         delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
         # 过去240根K线内的最大delta_high的绝对值
@@ -399,19 +341,7 @@ class MultiTFvpPOC:
         # ohlc5标准差, 按HFrame_vpLen窗口计算
         self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
         self.HFrame_price_std.index = coin_date_df.index  
-
-
-        low_poc, high_poc = vpvr_pct_band_vwap_boundary_enhanced(
-                    src=coin_date_df['close'],
-                    open_prices=coin_date_df['open'],
-                    close_prices=coin_date_df['close'],
-                    vol=coin_date_df['vol'],
-                    length=self.window_SFrame,         # 滑动窗口长度
-                    bins=40,
-                    pct=0.95,
-                    decay=0.995,
-                    vwap_series=self.LFrame_vpPOC_series   # vwap请提前自行计算、赋值
-                )
+        
         self.HFrame_vwap_up = ta.rma(high_poc, length=self.window_LFrame)
         self.HFrame_vwap_up_getin = ta.rma(high_poc + self.HFrame_price_std, length=self.window_LFrame)
         self.HFrame_vwap_up_getout = ta.rma(high_poc - self.HFrame_price_std, length=self.window_LFrame)
@@ -430,7 +360,7 @@ import matplotlib
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
 
-def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False):
+def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save_to_file=True):
     fig, ax = plt.subplots(figsize=(15, 8))
     fig.patch.set_facecolor('black')
 
@@ -488,21 +418,24 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False):
     fig.autofmt_xdate()
     plt.tight_layout()
 
-    save_dir = "plots"
-    os.makedirs(save_dir, exist_ok=True)
+    if save_to_file:
+        save_dir = "plots"
+        os.makedirs(save_dir, exist_ok=True)
 
-    from datetime import datetime
-    # 年月日_时-分-秒 (更可读)
-    timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]  # 去掉后3位微秒
-    # 输出: 20250531_09-04-50_629
+        from datetime import datetime
+        # 年月日_时-分-秒 (更可读)
+        timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]  # 去掉后3位微秒
+        # 输出: 20250531_09-04-50_629
 
-    prefix = f"{symbol}_" if symbol else ""
-    if is_trading:
-        prefix = f"trade_{prefix}" 
-    filename = os.path.join(save_dir, f"{prefix}multFramevpPOC_combined_plot_{timestamp}.png")
-    fig.savefig(filename)
-    plt.close(fig)
-    print(f"Plot saved to file: {filename}")
+        prefix = f"{symbol}_" if symbol else ""
+        if is_trading:
+            prefix = f"trade_{prefix}" 
+        filename = os.path.join(save_dir, f"{prefix}multFramevpPOC_combined_plot_{timestamp}.png")
+        fig.savefig(filename)
+        plt.close(fig)
+        print(f"Plot saved to file: {filename}")
+    else:
+        return fig
 
 
 def calc_atr(df, period=14, high_col="high", low_col="low", close_col="close"):

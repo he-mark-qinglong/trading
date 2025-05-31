@@ -315,7 +315,7 @@ class trade_coin(object):
                               logging.info((self.user,symbol,'LFrame_vpPOC',LFrame_vpPOCs.iloc[-1],'price0',price0,time11,model))
                           except:
                               pass
-                          print(place_order,symbol,model)
+                          print('place_order:', place_order,symbol,model)
                           orderid2= place_order['data'][0]['ordId']
                           orderinfo2=self.tradeAPI.get_orders(self.symbol,orderid2)['data'][0]
                           isfill2=orderinfo2['state']
@@ -521,7 +521,7 @@ class trade_coin(object):
         """
         csv_path = self.symbol + "_4s_ohlcv.csv"
         d = pd.read_csv(csv_path)
-        self.coin_data = d.iloc[-min(2000, len(d)):]
+        self.coin_data = d.iloc[-min(1500, len(d)):]
         return self.coin_data
 
     def create_order1(self,symbol,price,amount,model,tag="520ccb3f7df2SUDE"):#bef23d76c2f8SUDE model:buylong ,buyshort ,selllong ,sellshort ,buycash ,sellcash
