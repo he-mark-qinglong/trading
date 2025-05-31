@@ -2,6 +2,11 @@ import requests
 import json
 from . import consts as c, utils, exceptions
 
+proxies = {
+    'http': 'http://127.0.0.1:7890',
+    'https': 'http://127.0.0.1:7890',
+    'all':'socks5://127.0.0.1:7890'
+}
 
 class Client(object):
 
@@ -35,9 +40,9 @@ class Client(object):
         response = None
         
         if method == c.GET:
-            response = requests.get(url, headers=header)
+            response = requests.get(url, headers=header, proxies=proxies)
         elif method == c.POST:
-            response = requests.post(url, data=body, headers=header)
+            response = requests.post(url, data=body, headers=header,  proxies=proxies)
 
         # exception handle
         # print(response.headers)
@@ -59,7 +64,7 @@ class Client(object):
 
     def _get_timestamp(self):
         url = c.API_URL + c.SERVER_TIMESTAMP_URL
-        response = requests.get(url)
+        response = requests.get(url, proxies=proxies)
         if response.status_code == 200:
             return response.json()['ts']
         else:

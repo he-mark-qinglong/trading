@@ -5,79 +5,254 @@ import pandas_ta as ta
 import numpy as np
 import pandas as pd
 
-def vpvr_pct_band_vwap_boundary_series(src, vol, length, bins, pct, decay, vwap_series):
+# def vpvr_pct_band_vwap_boundary_series(src, vol, length, bins, pct, decay, vwap_series):
+#     """
+#     输入:
+#         src, vol, vwap_series: pd.Series, 价格、成交量、vwap等
+#         length: 滑窗长度
+#         bins: 分桶数
+#         pct: 累计包含的成交量比例，0~1
+#         decay: 时间加权衰减因子
+#     输出:
+#         pd.DataFrame：index与输入一致，含 band_low/band_high/vwap 三列
+#     """
+#     src = pd.Series(src)
+#     vol = pd.Series(vol)
+#     vwap_series = pd.Series(vwap_series)
+#     index = src.index
+#     band_low = np.full(len(src), np.nan)
+#     band_high = np.full(len(src), np.nan)
+#     for end in range(length-1, len(src)):
+#         slc = slice(end-length+1, end+1)
+#         s = src.iloc[slc].values
+#         v = vol.iloc[slc].values
+#         vv = vwap_series.iloc[end]
+#         lowv = np.min(s)
+#         highv = np.max(s)
+#         binsize = max((highv - lowv) / bins, 1e-8)
+#         accum = np.zeros(bins)
+#         for j in range(length):
+#             pricej = s[j]
+#             volj   = v[j]
+#             weightj = decay**(length - 1 - j)
+#             bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
+#             bini = max(0, min(bins - 1, bini))
+#             accum[bini] += volj * weightj
+#         total_vol = np.sum(accum)
+#         if total_vol == 0:
+#             continue
+#         # 找最大积点（POC）的位置
+#         center_idx = np.argmax(accum)
+#         sum_vol = accum[center_idx]
+#         left_idx = center_idx
+#         right_idx = center_idx
+#         while sum_vol < total_vol * pct:
+#             add_left = accum[left_idx - 1] if left_idx > 0 else -1
+#             add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
+#             if add_left >= add_right:
+#                 if left_idx > 0:
+#                     left_idx -= 1
+#                     sum_vol += accum[left_idx]
+#                 elif right_idx < bins - 1:
+#                     right_idx += 1
+#                     sum_vol += accum[right_idx]
+#                 else:
+#                     break
+#             else:
+#                 if right_idx < bins - 1:
+#                     right_idx += 1
+#                     sum_vol += accum[right_idx]
+#                 elif left_idx > 0:
+#                     left_idx -= 1
+#                     sum_vol += accum[left_idx]
+#                 else:
+#                     break
+#         # 计算边界加权均价
+#         # 下边界
+#         vlow = accum[left_idx]
+#         pricelow = lowv + binsize * (left_idx + 0.5)
+#         band_low[end] = (vlow * pricelow) / vlow if vlow > 0 else np.nan
+#         # 上边界
+#         vhigh = accum[right_idx]
+#         pricehigh = lowv + binsize * (right_idx + 0.5)
+#         band_high[end] = (vhigh * pricehigh) / vhigh if vhigh > 0 else np.nan
+
+#     return pd.Series(band_low, index=index), pd.Series(band_high, index=index)
+def vpvr_pct_band_vwap_boundary_enhanced(src, open_prices, close_prices, vol, length, bins, pct, decay, 
+                                       vwap_series=None, use_delta=False, use_vol_filter=False, 
+                                       use_external_vwap=False):
     """
-    输入:
-        src, vol, vwap_series: pd.Series, 价格、成交量、vwap等
-        length: 滑窗长度
-        bins: 分桶数
-        pct: 累计包含的成交量比例，0~1
-        decay: 时间加权衰减因子
-    输出:
-        pd.DataFrame：index与输入一致，含 band_low/band_high/vwap 三列
+    增强版VPVR百分位带状VWAP边界计算
+    
+    参数:
+        src: pd.Series, 价格序列(通常是典型价格)
+        open_prices: pd.Series, 开盘价
+        close_prices: pd.Series, 收盘价  
+        vol: pd.Series, 成交量
+        length: int, 滑窗长度
+        bins: int, 分桶数量
+        pct: float, 累计包含的成交量比例(0~1)
+        decay: float, 时间加权衰减因子
+        vwap_series: pd.Series, 外部VWAP序列(可选)
+        use_delta: bool, 是否使用delta成交量(有向成交量绝对值)
+        use_vol_filter: bool, 是否启用成交量过滤(只计算大于均值的K线)
+        use_external_vwap: bool, 是否使用外部VWAP作为中心(否则使用POC)
+    
+    返回:
+        tuple: (band_low, band_high, center_vwap) 三个pd.Series
     """
+    import pandas as pd
+    import numpy as np
+    
     src = pd.Series(src)
+    open_prices = pd.Series(open_prices)
+    close_prices = pd.Series(close_prices)
     vol = pd.Series(vol)
-    vwap_series = pd.Series(vwap_series)
+    
+    if vwap_series is not None:
+        vwap_series = pd.Series(vwap_series)
+    
     index = src.index
     band_low = np.full(len(src), np.nan)
-    band_high = np.full(len(src), np.nan)
+    band_high = np.full(len(src), np.nan) 
+    center_vwap = np.full(len(src), np.nan)
+    
     for end in range(length-1, len(src)):
         slc = slice(end-length+1, end+1)
         s = src.iloc[slc].values
+        o = open_prices.iloc[slc].values
+        c = close_prices.iloc[slc].values
         v = vol.iloc[slc].values
-        vv = vwap_series.iloc[end]
+        
+        # 计算价格范围
         lowv = np.min(s)
         highv = np.max(s)
         binsize = max((highv - lowv) / bins, 1e-8)
         accum = np.zeros(bins)
+        
+        # 量过滤：计算成交量均值
+        vmean = np.mean(v) if use_vol_filter else 0
+        
+        # 累积到bins
         for j in range(length):
             pricej = s[j]
-            volj   = v[j]
+            openj = o[j]
+            closej = c[j]
+            volj = v[j]
+            
+            # 量过滤判断
+            if use_vol_filter and volj <= vmean:
+                continue
+                
+            # 计算权重
             weightj = decay**(length - 1 - j)
+            
+            # 计算bin索引
             bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
             bini = max(0, min(bins - 1, bini))
-            accum[bini] += volj * weightj
+            
+            # 根据是否使用delta选择累积方式
+            if use_delta:
+                # 计算有向成交量的绝对值
+                if closej > openj:
+                    deltaj = volj
+                elif closej < openj:
+                    deltaj = -volj
+                else:
+                    deltaj = 0
+                accum[bini] += abs(deltaj) * weightj
+            else:
+                # 普通成交量
+                accum[bini] += volj * weightj
+        
         total_vol = np.sum(accum)
         if total_vol == 0:
             continue
-        # 找最大积点（POC）的位置
-        center_idx = np.argmax(accum)
+            
+        # 确定中心点
+        if use_external_vwap and vwap_series is not None:
+            # 使用外部VWAP确定中心
+            vv = vwap_series.iloc[end]
+            center_idx = int(np.floor((bins - 1) * (vv - lowv) / max(highv - lowv, 1e-8)))
+            center_idx = max(0, min(bins - 1, center_idx))
+        else:
+            # 使用POC(最大成交量bin)作为中心
+            center_idx = np.argmax(accum)
+        
+        # 从中心向两侧扩展
         sum_vol = accum[center_idx]
         left_idx = center_idx
         right_idx = center_idx
+        
         while sum_vol < total_vol * pct:
             add_left = accum[left_idx - 1] if left_idx > 0 else -1
             add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
-            if add_left >= add_right:
-                if left_idx > 0:
-                    left_idx -= 1
-                    sum_vol += accum[left_idx]
-                elif right_idx < bins - 1:
-                    right_idx += 1
-                    sum_vol += accum[right_idx]
-                else:
-                    break
+            
+            if add_left >= add_right and left_idx > 0:
+                left_idx -= 1
+                sum_vol += accum[left_idx]
+            elif right_idx < bins - 1:
+                right_idx += 1
+                sum_vol += accum[right_idx]
+            elif left_idx > 0:
+                left_idx -= 1
+                sum_vol += accum[left_idx]
             else:
-                if right_idx < bins - 1:
-                    right_idx += 1
-                    sum_vol += accum[right_idx]
-                elif left_idx > 0:
-                    left_idx -= 1
-                    sum_vol += accum[left_idx]
-                else:
-                    break
-        # 计算边界加权均价
-        # 下边界
-        vlow = accum[left_idx]
-        pricelow = lowv + binsize * (left_idx + 0.5)
-        band_low[end] = (vlow * pricelow) / vlow if vlow > 0 else np.nan
-        # 上边界
-        vhigh = accum[right_idx]
-        pricehigh = lowv + binsize * (right_idx + 0.5)
-        band_high[end] = (vhigh * pricehigh) / vhigh if vhigh > 0 else np.nan
-
-    return pd.Series(band_low, index=index), pd.Series(band_high, index=index)
+                break
+        
+        # 计算中心区间的VWAP
+        # wsum_center = 0.0
+        # pvsum_center = 0.0
+        # for i in range(left_idx, right_idx + 1):
+        #     v_i = accum[i]
+        #     price_i = lowv + binsize * (i + 0.5)
+        #     wsum_center += v_i
+        #     pvsum_center += v_i * price_i
+        # center_vwap[end] = pvsum_center / wsum_center if wsum_center > 0 else np.nan
+        
+        # 计算左边界附近5个bins的加权均价
+        def calc_boundary_vwap(boundary_idx, is_left=True):
+            # 优先取boundary_idx上下各2个bins
+            start_i = max(0, boundary_idx - 2)
+            end_i = min(bins - 1, boundary_idx + 2)
+            
+            # 检查bins数量，如果不足5个则扩展
+            bins_count = end_i - start_i + 1
+            if bins_count < 5:
+                if is_left and end_i < bins - 1:
+                    # 左边界优先向上扩展
+                    end_i = min(bins - 1, start_i + 4)
+                elif not is_left and start_i > 0:
+                    # 右边界优先向下扩展  
+                    start_i = max(0, end_i - 4)
+            
+            # 再次检查，还不足则向另一侧扩展
+            bins_count = end_i - start_i + 1
+            if bins_count < 5:
+                if is_left and start_i > 0:
+                    start_i = max(0, end_i - 4)
+                elif not is_left and end_i < bins - 1:
+                    end_i = min(bins - 1, start_i + 4)
+            
+            # 计算这些bins的加权均价
+            wsum = 0.0
+            pvsum = 0.0
+            for i in range(start_i, end_i + 1):
+                v_i = accum[i]
+                price_i = lowv + binsize * (i + 0.5)
+                wsum += v_i
+                pvsum += v_i * price_i
+            
+            return pvsum / wsum if wsum > 0 else np.nan
+        
+        # 计算左右边界的加权均价
+        band_low[end] = calc_boundary_vwap(left_idx, is_left=True)
+        band_high[end] = calc_boundary_vwap(right_idx, is_left=False)
+    
+    return (pd.Series(band_low, index=index), 
+            pd.Series(band_high, index=index),
+            # pd.Series(center_vwap, index=index)
+            )
     
 def vpvr_pct_band_vwap_decay_series(src, vol, length, bins, pct, decay):
     """
@@ -187,6 +362,8 @@ class MultiTFvpPOC:
         self.HFrame_vwap_down_getin = None
         self.HFrame_vwap_down_getout = None
         
+        self.HFrame_vwap_down_sl = None
+        self.HFrame_vwap_up_sl = None
     
     
     def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
@@ -207,11 +384,27 @@ class MultiTFvpPOC:
         self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
 
         self.HFrame_price_std = self.HFrame_ohlc5_series.rolling(window=self.window_HFrame, min_periods=1).std()  
+        # 假设 close, SFrame_vpPOC, ohlc5 为 pd.Series
+        delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+        # 过去240根K线内的最大delta_high的绝对值
+        max_delta_high = delta_high.rolling(240).max().abs()
+
+        delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
+        # 过去240根K线内的最小delta_low的绝对值
+        min_delta_low = delta_low.rolling(240).min().abs()
+
+        # 取二者较大值
+        HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
+
+        # ohlc5标准差, 按HFrame_vpLen窗口计算
+        self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.8 + HFrame_max_swing * 0.2
         self.HFrame_price_std.index = coin_date_df.index  
 
 
-        low_poc, high_poc = vpvr_pct_band_vwap_boundary_series(
+        low_poc, high_poc = vpvr_pct_band_vwap_boundary_enhanced(
                     src=coin_date_df['close'],
+                    open_prices=coin_date_df['open'],
+                    close_prices=coin_date_df['close'],
                     vol=coin_date_df['vol'],
                     length=self.window_SFrame,         # 滑动窗口长度
                     bins=40,
@@ -227,6 +420,9 @@ class MultiTFvpPOC:
         self.HFrame_vwap_down_getin = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
         self.HFrame_vwap_down_getout = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
 
+        self.HFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
+        self.HFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
+
 
 import os
 import time
@@ -234,7 +430,7 @@ import matplotlib
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
 
-def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
+def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False):
     fig, ax = plt.subplots(figsize=(15, 8))
     fig.patch.set_facecolor('black')
 
@@ -249,6 +445,9 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
         'HFrame_vwap_down': 'blue',
         'HFrame_vwap_down_getin': 'deepskyblue',
         'HFrame_vwap_down_getout': 'cyan',
+
+        'HFrame_vwap_up_sl': 'red',
+        'HFrame_vwap_down_sl': 'green',
     }
 
     # 依次绘制所有线
@@ -262,6 +461,8 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
         'HFrame_vwap_down',
         'HFrame_vwap_down_getin',
         'HFrame_vwap_down_getout',
+        'HFrame_vwap_up_sl',
+        'HFrame_vwap_down_sl',
     ]
     for var in vars_to_plot:
         val = getattr(multFramevpPOC, var, None)
@@ -291,6 +492,8 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol=''):
     os.makedirs(save_dir, exist_ok=True)
     timestamp = int(time.time())
     prefix = f"{symbol}_" if symbol else ""
+    if is_trading:
+        prefix = f"trade_{prefix}" 
     filename = os.path.join(save_dir, f"{prefix}multFramevpPOC_combined_plot_{timestamp}.png")
     fig.savefig(filename)
     plt.close(fig)

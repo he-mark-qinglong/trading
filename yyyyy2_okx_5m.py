@@ -35,13 +35,14 @@ flag='0'
 
 from LHFrameStd import MultiTFvpPOC, plot_all_multiftfpoc_vars, calc_atr
 
-def get_martingale_coefficient(counter, base=1.2):
+def get_martingale_coefficient(counter, base=1.2, delta=0.1):
     if counter <= 1:
         return 1.0
     else:
-        return base ** (counter - 1)
+        rand_base = random.uniform(base - delta, base + delta)
+        return rand_base ** (counter - 1)
 
-class trade_coin(object):
+class trade_coin(object): 
     def __init__(self,symbol,user,asset ):
         acclist = self.import_account()
         okexacc = acclist['okex_v5_excute']
@@ -56,7 +57,7 @@ class trade_coin(object):
         self.asset_time=0
         self.asset_record = deque(maxlen=1440)
 
-        self.save_pic_interval = 50
+        self.save_pic_interval = 5
         self.save_pic_counter = 0
 
         self.long_append_counter = 1
@@ -136,10 +137,10 @@ class trade_coin(object):
                 max_draw=1
             if max_draw < 1 - 0.1:
                 self.asset_normal=0
-                print('当日资金回撤百分比超过%s'%(1-max_draw)*100,'当日停止开仓'*100)
+                print('----当日资金回撤百分比超过%s'%(1-max_draw)*30,'当日停止开仓'*100)
             else:
                 self.asset_normal=1
-                print('当日资金回撤百分比为%s'%(1-max_draw)*10,usdt_total,max(self.asset_record))
+                print('++++当日资金回撤百分比为%s'%(1-max_draw),usdt_total,max(self.asset_record))
             
             time11 = datetime.datetime.now()
             self.coin_date=self.get_kline()
@@ -151,7 +152,7 @@ class trade_coin(object):
                 time.sleep(0.1)
             except Exception as e:
                 time.sleep(0.1)
-                print('--3'*50,e)
+                print('--3'*15,e)
             lock.release()
             
             try:
@@ -162,7 +163,7 @@ class trade_coin(object):
                 time.sleep(0.1)
             except Exception as e:
                 time.sleep(0.1)
-                print('--2'*50,e)  
+                print('--2'*15,e)  
             lock.release()
             '''
             索引	含义	说明
@@ -182,12 +183,12 @@ class trade_coin(object):
             LFrame_vpPOCs = multFramevpPOC.LFrame_vpPOC_series
 
             if self.save_pic_counter % self.save_pic_interval == 0:
-                plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol)
+                plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol, False)
                 time.sleep(0.1)
-                # from vpvr_gmm_splited import VPVRAnalyzer
-                # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
-                # result = analyzer.run(self.symbol)
-                # print(result['regions'])
+            #     # from vpvr_gmm_splited import VPVRAnalyzer
+            #     # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
+            #     # result = analyzer.run(self.symbol)
+            #     # print(result['regions'])
                 
                 if self.save_pic_counter >= 4294967296-1:  #2**32 - 1, avoid value overflow
                     self.save_pic_counter = 1
@@ -196,57 +197,57 @@ class trade_coin(object):
             if 1:
                 '''开平仓信号计算'''
                 print ("\t 开仓信号计算 开始 %s" %time.ctime())
-                ohcl5 = self.coin_date.iloc[:,4] 
+                close = self.coin_date.iloc[:,4] 
                 hh2 = self.coin_date.iloc[:,2] 
                 ll2 = self.coin_date.iloc[:,3] 
                 open2 = self.coin_date.iloc[:,1] 
                 vol = self.coin_date.iloc[:,5]
                 
-                cur_close = ohcl5.iloc[-1]
+                cur_close = close.iloc[-1]
 
                 multiFrame_vpPOC_short = 0
                 multiFrame_vpPOC_long = 0
-                
-                minus_LFramePOC_to_HFramePOC_percent_delta = 0.0001  #避免std收窄的时候还在开仓，结果开出了逆势的仓位，容易导致长期扛单。
-                minus_close_to_lframe_vwap_percent = 0.003
 
                 HFrame_vwap_down_getin = multFramevpPOC.HFrame_vwap_down_getin.iloc[-1]
                 HFrame_vwap_up_getin = multFramevpPOC.HFrame_vwap_up_getin.iloc[-1]
                 HFrame_vwap_up_getout = multFramevpPOC.HFrame_vwap_up_getout.iloc[-1]
                 HFrame_vwap_down_getout = multFramevpPOC.HFrame_vwap_down_getout.iloc[-1]
-                minus_LFramePOC_to_HFramePOC_percent_delta = minus_LFramePOC_to_HFramePOC_percent_delta/2
-                minus_close_to_lframe_vwap_percent = minus_close_to_lframe_vwap_percent/2
+                HFrame_vwap_up_poc = multFramevpPOC.HFrame_vwap_up.iloc[-1]
+                HFrame_vwap_down_poc = multFramevpPOC.HFrame_vwap_down.iloc[-1]
+                HFrame_vwap_down_sl = multFramevpPOC.HFrame_vwap_down_sl.iloc[-1]
+                HFrame_vwap_up_sl = multFramevpPOC.HFrame_vwap_up_sl.iloc[-1]
 
+                cur_high = hh2.iloc[-1]
                 is_short_un_opend = len(buy_total_short)<2
                 if is_short_un_opend:
-                    if  HFrame_vwap_up_getin <= cur_close:  # and LF_STDUpper <= cur_close and lf2hf_cond:
+                    if  (HFrame_vwap_up_getin < cur_close or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)) and HFrame_vwap_up_sl > cur_high:  # and LF_STDUpper <= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_short=1
                         self.short_append_counter += 1
                 else:  #加仓条件
-                    time_cond =  time.time() - buy_total_short.iloc[-1,5]>60*4*self.short_append_counter
-                    if ( HFrame_vwap_up_getin <= cur_close and time_cond):
+                    time_cond =  time.time() - buy_total_short.iloc[-1,5]>20*self.short_append_counter
+                    if ( HFrame_vwap_up_getin <= cur_close or (cur_close > HFrame_vwap_up_poc and cur_high > HFrame_vwap_up_getin)) and time_cond:
                         multiFrame_vpPOC_short=1
 
                         self.short_append_counter += 1
 
+                cur_low = ll2.iloc[-1]
                 is_long_un_opend = len(buy_total_long)<2
                 if is_long_un_opend:
-                    if HFrame_vwap_down_getin >= cur_close:  # and LF_STDLower >= cur_close and lf2hf_cond:
+                    if (HFrame_vwap_down_getin > cur_close or (cur_close < HFrame_vwap_down_poc and cur_low  < HFrame_vwap_down_getin)) and HFrame_vwap_down_sl < cur_low:  # and LF_STDLower >= cur_close and lf2hf_cond:
                         multiFrame_vpPOC_long=1
                         self.long_append_counter += 1
                 else:  #加仓条件
-                    time_cond = time.time()-buy_total_long.iloc[-1,5] > 60*4*self.long_append_counter
-                    if (HFrame_vwap_down_getin >= cur_close and time_cond):
+                    time_cond = time.time()-buy_total_long.iloc[-1,5] > 20*self.long_append_counter
+                    if (HFrame_vwap_down_getin > cur_close or (cur_close < HFrame_vwap_down_poc and cur_low < HFrame_vwap_down_getin)) and time_cond:
                         multiFrame_vpPOC_long=1
                         self.long_append_counter += 1
 
-                # if multiFrame_vpPOC_long != 1 and multiFrame_vpPOC_short != 1:
-                #     time.sleep(1)
-                #     self.cancel_order()
+                if multiFrame_vpPOC_long != 1 and multiFrame_vpPOC_short != 1:
+                    self.cancel_order()
 
                 print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, multiFrame_vpPOC_long=={multiFrame_vpPOC_long\
                         }, self.upl_short_open=={self.upl_short_open==1}, multiFrame_vpPOC_short=={multiFrame_vpPOC_short}, ',
-                      '--3'*50)
+                      '--3'*15)
 
                 if self.asset_normal==1 and self.upl_short_open==1 and multiFrame_vpPOC_short==1 :
                     #开空
@@ -254,13 +255,13 @@ class trade_coin(object):
                         if 1 :
                           usdt_total=self.get_usdt_total()
                           model='buyshort'
-                          price0=hh2.iloc[-1]
-                          price = price0*(1-0.0002) #if is_short_un_opend else price0*(1+0.0001)  #首次开仓立刻成交。limit挂单需要配合撤单
+                          price0=cur_close if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
+                          price = price0*(1-0.0001) 
                           fv=self.fv[self.symbol]
-                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1) * get_martingale_coefficient(self.short_append_counter)
                           
                           symbol=self.symbol
-                          place_order=self.create_order1(symbol,price,amount,model) * get_martingale_coefficient(self.short_append_counter)
+                          place_order=self.create_order1(symbol,price,amount,model) 
                           print(place_order,symbol,model)
                           try:
                               logging.info((self.user,symbol,'LFrame_vpPOC',LFrame_vpPOCs.iloc[-1],'price0',price0,time11,model))
@@ -271,14 +272,16 @@ class trade_coin(object):
                           isfill2=orderinfo2['state']
                           fillPx=float(orderinfo2['fillPx'])
                           fillSz=float(orderinfo2['fillSz'])
-                          holdC0 = pd.DataFrame(np.zeros([1,6]))
+                          holdC0 = pd.DataFrame(np.empty([1,6], dtype=object))
                           holdC0.iloc[0,:]=time11,'short',fillPx,fillSz,fillPx*fillSz*fv,time.time()
-                          buy_total_short=buy_total_short.append(holdC0,ignore_index=True)
+                          buy_total_short=buy_total_short.concat(holdC0)
                           print('buy_total_short',buy_total_short)
                           pk1 = open(root+'/buy_total_short_%s_%s.spydata'%(self.symbol,self.user),'wb')
                           pickle.dump(buy_total_short,pk1)
                           pk1.close()
                           print('orderid2',orderid2,'orderinfo2',orderinfo2,'fillPx',fillPx,'fillSz',fillSz)
+
+                          plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol, True)
                           time.sleep(2)
                     except Exception as e:
                           time.sleep(1)
@@ -292,12 +295,12 @@ class trade_coin(object):
                         if 1:
                           usdt_total=self.get_usdt_total()
                           model='buylong'
-                          price0=ll2.iloc[-1]
-                          price=price0*(1+0.0002) #if is_long_un_opend else price0*(1-0.0001)  #首次开仓立刻成交。limit挂单需要配合撤单
+                          price0=cur_close if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                          price=price0*(1+0.0001)
                           fv=self.fv[self.symbol]
-                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1)
+                          amount=max(float(round(usdt_total/self.asset_coe/price0/fv)), 1) * get_martingale_coefficient(self.short_append_counter)
                           symbol=self.symbol
-                          place_order=self.create_order1(symbol,price,amount,model) * get_martingale_coefficient(self.short_append_counter)
+                          place_order=self.create_order1(symbol,price,amount,model)
                           try:
                               logging.info((self.user,symbol,'LFrame_vpPOC',LFrame_vpPOCs.iloc[-1],'price0',price0,time11,model))
                           except:
@@ -308,14 +311,18 @@ class trade_coin(object):
                           isfill2=orderinfo2['state']
                           fillPx=float(orderinfo2['fillPx'])
                           fillSz=float(orderinfo2['fillSz'])
-                          holdC0 = pd.DataFrame(np.zeros([1,6]))
+                          holdC0 = pd.DataFrame(np.empty([1,6], dtype=object))
                           holdC0.iloc[0,:]=time11,'long',fillPx,fillSz,fillPx*fillSz*fv,time.time()
-                          buy_total_long=buy_total_long.append(holdC0,ignore_index=True)
+                          
+                          buy_total_long=buy_total_long.concat( holdC0)
                           print('buy_total_long',buy_total_long)
                           pk1 = open(root+'/buy_total_long_%s_%s.spydata'%(self.symbol,self.user),'wb')
                           pickle.dump(buy_total_long,pk1)
                           pk1.close()
                           print('orderid2',orderid2,'orderinfo2',orderinfo2,'fillPx',fillPx,'fillSz',fillSz)
+
+                          plot_all_multiftfpoc_vars( multFramevpPOC, self.symbol, True)
+
                           time.sleep(2)
                     except Exception as e:
                           time.sleep(1)
@@ -327,7 +334,7 @@ class trade_coin(object):
                     usdt_total=self.get_usdt_total()
                     notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
                     print(notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict)
-                    print('--2'*200,upl_long_dict,upl_short_dict,sum(upl_long_dict.values()),sum(upl_short_dict.values()))
+                    print('--2'*40,upl_long_dict,upl_short_dict,sum(upl_long_dict.values()),sum(upl_short_dict.values()))
 
                     symbol=self.symbol
                     try:
@@ -349,22 +356,27 @@ class trade_coin(object):
                         upl_long=0
                         amount_long=0
                         notionalUsd_long=0
-
-                    stop_profit=calc_atr(self.coin_date).iloc[-1]/cur_close * 10  #4s * 15 = 60s,  1 min
-
+                    
                     lever_dic = self.accountAPI.get_leverage(self.symbol, 'cross')
-                    fee_require_profit = 0.0004 
+                    fee_require_profit = 0.0004 + 0.0001
                     # if len(lever_dic) > 0:
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
                     
-                    
+                    stop_profit=max(fee_require_profit, calc_atr(self.coin_date).iloc[-1]/cur_close * 15 * 5)  #4s * 15 = 60s,  1 min
+
                     if amount_short>0:
                         short_profit = upl_short/notionalUsd_short
-                        if (short_profit >stop_profit or (cur_close <= HFrame_vwap_down_getout and short_profit > fee_require_profit)):
+                        tp_condition = (short_profit >stop_profit or (cur_close <= HFrame_vwap_down_poc and short_profit > fee_require_profit)) or (cur_close <= HFrame_vwap_down_sl and close.iloc[-2] <= multFramevpPOC.HFrame_vwap_down_sl.iloc[-2])
+                        bool_series = (multFramevpPOC.HFrame_vwap_up_sl.iloc[-3:] < hh2.iloc[-3:])
+                        # 最近三根K线中有2根以上为True
+                        sl_condition = bool_series.iloc[-3:].sum() >= 2
+                        
+                        if tp_condition or sl_condition:
                             model='sellshort'
-                            price0=cur_close
-                            price=price0*(1+0.0001)
+                            # price0=cur_close
+                            price0 = HFrame_vwap_down_getout if tp_condition else HFrame_vwap_up_sl
+                            price=price0*(1-0.0001)
                             amount=max(amount_short, 1)
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model)
@@ -376,13 +388,16 @@ class trade_coin(object):
                             pickle.dump(buy_total,pk1)
                             pk1.close()
                             self.short_append_counter = 1
-
                     
                     if amount_long>0:
                         long_profit = upl_long/notionalUsd_long
-                        if (long_profit>stop_profit or (cur_close >= HFrame_vwap_up_getout and long_profit > fee_require_profit)):
+                        tp_condition = (long_profit>stop_profit or (cur_close >= HFrame_vwap_up_poc and long_profit > fee_require_profit))  or (cur_close >= HFrame_vwap_up_sl or close.iloc[-2] >= multFramevpPOC.HFrame_vwap_up_sl.iloc[-2])
+                        bool_series = (multFramevpPOC.HFrame_vwap_down_sl.iloc[-3:] > ll2.iloc[-3:])
+                        # 最近三根K线中有2根以上为True
+                        sl_condition = bool_series.iloc[-3:].sum() >= 2
+                        if tp_condition or sl_condition:
                             model='selllong'
-                            price0=cur_close
+                            price0=  HFrame_vwap_up_getout if tp_condition else HFrame_vwap_down_sl
                             price=price0*(1.00 - 0.0001)
                             amount=max(amount_long, 1)
                             symbol=self.symbol
@@ -395,6 +410,7 @@ class trade_coin(object):
                             pickle.dump(buy_total,pk1)
                             pk1.close()
                             self.long_append_counter = 1
+                        
 
                     if ((upl_long+ upl_short)/usdt_total<-0.15) or self.asset_normal==0 :
                         try:  
@@ -483,42 +499,6 @@ class trade_coin(object):
         self.coin_data: 历史拼接过的数据
         self.last_timestamp: 记录最后K线的时间戳
         """
-        # if init or not hasattr(self, 'coin_data'):
-        #     limit = 1000   # 首次拉大量
-        #     since = ''     # 拉最新
-        # else:
-        #     limit = 5      # 只拉一点点
-        #     since = ''     # 部分接口有from/to。也可以通过API参数指定传入last_timestamp
-
-        # # 拉取数据
-        # result = self.marketAPI.get_candlesticks(self.symbol, '', '', '1m', limit=limit)
-        # klist = result['data']   # 或 result.index
-        # if not klist: return
-
-        # # 转df
-        # df = pd.DataFrame([[int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])] for row in klist],
-        #                 columns=['ts','open','high','low','close','vol'])
-
-        # # 时间从大到小排，去重
-        # df = df.sort_values('ts').drop_duplicates('ts')
-        
-        # df['datetime'] = pd.to_datetime(df['ts'], unit='ms')
-
-        # if init or not hasattr(self, 'coin_data'):
-        #     self.coin_data = df.copy()
-        # else:
-        #     # 只追加新K线（时间大于last_timestamp）
-        #     df_new = df[df['ts'] > self.last_timestamp]
-        #     if not df_new.empty:
-        #         self.coin_data = pd.concat([self.coin_data, df_new], axis=0).drop_duplicates('ts').reset_index(drop=True)
-        # # 更新last_timestamp
-        # self.last_timestamp = self.coin_data['ts'].max()
-        # self.coin_data = self.coin_data.sort_values('ts', ascending=True).reset_index(drop=True)
-
-        # micro_split = None
-        # if micro_split is not None:
-        #     self.coin_data = split_each_kline_row_to_micro_klines(self.coin_data, n_splits=micro_split).reset_index(drop=True)
-
         csv_path = self.symbol + "_4s_ohlcv.csv"
         d = pd.read_csv(csv_path)
         self.coin_data = d.iloc[-min(2000, len(d)):]
