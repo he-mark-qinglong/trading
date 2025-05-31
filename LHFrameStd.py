@@ -4,6 +4,7 @@ import os
 import pandas_ta as ta
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
 
 def vpvr_pct_band_vwap_boundary_enhanced(src, open_prices, close_prices, vol, length, bins, pct, decay, 
                                        vwap_series=None, use_delta=False, use_vol_filter=False, 
@@ -291,9 +292,99 @@ class MultiTFvpPOC:
         
         self.HFrame_vwap_down_sl = None
         self.HFrame_vwap_up_sl = None
-    
+    def compute_structures(self, coin_date_df):
+        close = coin_date_df['close']
+        vol   = coin_date_df['vol']
+        open_ = coin_date_df['open']
+
+        # 定义并行计算函数
+        def calc_LFrame():
+            return vpvr_pct_band_vwap_decay_series(
+                close, vol, self.window_LFrame, 40, 0.995, 0.99
+            )
+
+        def calc_SFrame_raw():
+            return vpvr_pct_band_vwap_decay_series(
+                close, vol, self.window_SFrame, 40, 0.995, 0.99
+            )
+
+        def calc_boundary(s_frame_raw):
+            return vpvr_pct_band_vwap_boundary_enhanced(
+                src=close,
+                open_prices=open_,
+                close_prices=close,
+                vol=vol,
+                length=self.window_SFrame,
+                bins=40,
+                pct=0.95,
+                decay=0.995,
+                vwap_series=s_frame_raw
+            )
+
+        # 最大并行数设置为 6～8
+        with ThreadPoolExecutor(max_workers=6) as exe:
+            # 阶段1：并行 LFrame 和 原始 SFrame
+            fut_L = exe.submit(calc_LFrame)
+            fut_Sr = exe.submit(calc_SFrame_raw)
+
+            # 等待原始 SFrame，才能做后续两个依赖任务：SFrame 平滑 和 boundary
+            s_frame_raw = fut_Sr.result()
+
+            # 阶段2：并行 SFrame 平滑 & boundary
+            fut_Sm = exe.submit(ta.rma, s_frame_raw, self.window_LFrame)
+            fut_B  = exe.submit(calc_boundary, s_frame_raw)
+
+            # 收阶段2结果
+            self.SFrame_vpPOC = fut_Sm.result()
+            low_poc, high_poc = fut_B.result()
+
+            # 收阶段1 LFrame
+            self.LFrame_vpPOC_series = fut_L.result()
+
+            # 阶段3：HFrame_ohlc5 和 swing 标准差必须在线程外按顺序执行
+            self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
+            self.HFrame_ohlc5_series = self.LFrame_ohlc5_series
+
+            # 计算 swing 范围
+            delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+            max_delta_high = delta_high.rolling(240).max().abs()
+            delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
+            min_delta_low = delta_low.rolling(240).min().abs()
+            HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
+
+            # 价格 std
+            self.HFrame_price_std = (
+                close.rolling(self.window_HFrame).std() * 0.9 +
+                HFrame_max_swing * 0.1
+            )
+            self.HFrame_price_std.index = coin_date_df.index
+
+            # 阶段4：并行所有 HFrame VWAP 系列 rma 计算
+            futs = {
+                'up':         exe.submit(ta.rma, high_poc,                      self.window_LFrame),
+                'up_getin':   exe.submit(ta.rma, high_poc + self.HFrame_price_std, self.window_LFrame),
+                'up_getout':  exe.submit(ta.rma, high_poc - self.HFrame_price_std, self.window_LFrame),
+                'down':       exe.submit(ta.rma, low_poc,                       self.window_LFrame),
+                'down_getin': exe.submit(ta.rma, low_poc - self.HFrame_price_std,  self.window_LFrame),
+                'down_getout':exe.submit(ta.rma, low_poc + self.HFrame_price_std,  self.window_LFrame),
+                'down_sl':    exe.submit(ta.rma, low_poc - 2*self.HFrame_price_std,self.window_LFrame),
+                'up_sl':      exe.submit(ta.rma, high_poc + 2*self.HFrame_price_std, self.window_LFrame),
+            }
+
+            # 收回结果
+            self.HFrame_vwap_up           = futs['up'].result()
+            self.HFrame_vwap_up_getin     = futs['up_getin'].result()
+            self.HFrame_vwap_up_getout    = futs['up_getout'].result()
+            self.HFrame_vwap_down         = futs['down'].result()
+            self.HFrame_vwap_down_getin   = futs['down_getin'].result()
+            self.HFrame_vwap_down_getout  = futs['down_getout'].result()
+            self.HFrame_vwap_down_sl      = futs['down_sl'].result()
+            self.HFrame_vwap_up_sl        = futs['up_sl'].result()
     
     def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
+        self.compute_structures(coin_date_df)
+        return
+    
         open_ = coin_date_df['open']
         high = coin_date_df['high']
         low = coin_date_df['low']  

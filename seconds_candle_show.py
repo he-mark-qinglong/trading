@@ -3,17 +3,30 @@ import pandas as pd
 import time
 from datetime import datetime
 from dash import Dash, dcc, html
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
+from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import LHFrameStd
+from yyyyy2_okx_5m import trade_coin
 
 symbol = "ETH-USDT-SWAP"
 csv_path = symbol + "_4s_ohlcv.csv"
 
+
+trade_client = None
+
 app = Dash(__name__)
 app.layout = html.Div([
     html.H2("OKX 4s K-line OHLCV (Auto-refresh)"),
+    # 这里是一键平仓部分
+    dcc.ConfirmDialogProvider(
+        children=html.Button("一键平仓", id="btn-close", n_clicks=0),
+        id="confirm-close",
+        message="⚠️ 确认要全部平仓？此操作不可撤销！"
+    ),
+    html.Div(id="close-status", style={"marginTop": "5px", "color": "green"}),
+
     dcc.Graph(id="kline-graph"),
     dcc.Interval(id='interval', interval=5*1000, n_intervals=0),
     html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
@@ -45,7 +58,15 @@ def update_graph(n):
         return go.Figure(), "CSV文件不存在"
     try:
         # 1. 读取 + 验证
-        df = pd.read_csv(csv_path)
+        df = None
+        while True:
+            try:
+                df = pd.read_csv(csv_path)
+                break
+            except Exception as e:
+                print(f'error:{e}')
+                time.sleep(1)
+
         req = {"ts","open","high","low","close","vol"}
         if not req.issubset(df.columns):
             miss = req - set(df.columns)
@@ -57,7 +78,7 @@ def update_graph(n):
         df["datetime"] = pd.to_datetime(df["ts"], unit="s")
 
          # 3. 计算 vpPOC/VWAP 系列（与 df 同长度同索引）
-        df = df.iloc[-min(1500, len(df)):]
+        df = df.iloc[-min(1000, len(df)):]
         import time
         before_cal = time.time()
         multiVwap = LHFrameStd.MultiTFvpPOC()
@@ -65,6 +86,25 @@ def update_graph(n):
         after_calc = time.time()
         print(f'time consumed:{after_calc - before_cal}')
 
+
+        # 找到第一个非 NaN 的索引标签
+        start_idx = multiVwap.HFrame_vwap_down_sl.first_valid_index()
+
+        if start_idx is not None:
+            # 用 .loc 截断 df
+            df = df.loc[start_idx:].copy()
+            
+            # 同步截断 Dash 里要画的所有 series
+            for var in vars_to_plot:  # vars_to_plot 要与 Dash callback 里一致
+                series = getattr(multiVwap, var, None)
+                if isinstance(series, pd.Series):
+                    # 截断后赋回去
+                    setattr(multiVwap, var, series.loc[start_idx:])
+        else:
+            # 如果全是 NaN，就清空 df，下面会绘制空图
+            df = df.iloc[0:0]
+
+        # 之后继续你的绘图逻辑，用截断后的 df 与 multiVwap.series.values 渲染
 
         # 4. 构建 subplot
         fig = make_subplots(
@@ -117,6 +157,41 @@ def update_graph(n):
         return fig, "数据读取正常，自动刷新"
     except Exception as e:
         return go.Figure(), f"渲染错误：{str(e)}"
+
+
+
+# 占位函数：点击后会触发这里，后续填你真实的 API 调用逻辑
+def execute_close_position():
+    try:
+        if trade_client == None:
+            trade_client = trade_coin(symbol, 'yyyyy2_okx', 1500)
+        res = trade_client.close_all_positions()
+        return {"success": True, "detail": res}
+    except Exception as e:
+        return {"success": False, "errmsg": str(e)}
+
+# ----------------- 平仓回调 -----------------
+@app.callback(
+    Output("close-status", "children"),
+    Output("btn-close", "disabled"),
+    Input("confirm-close", "submit_n_clicks"),
+    State("btn-close", "disabled"),
+)
+def on_close(submit_n, disabled):
+    if not submit_n or disabled:
+        # 没确认或已禁用，跳过更新
+        return 'waiting', False
+
+    # 先给前端一个“正在平仓”提示，并立即禁用按钮
+    status = "平仓中…"
+    # 真正调用你的平仓接口
+    res = execute_close_position()
+    if res.get("success"):
+        status = f"✔ 平仓完成，成交价={res['filled_px']}，成交量={res['filled_sz']}"
+    else:
+        status = f"✘ 平仓失败：{res.get('errmsg','未知错误')}"
+
+    return status, True
 
 if __name__ == '__main__':
     app.run(debug=True)

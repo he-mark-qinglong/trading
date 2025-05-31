@@ -2718,3 +2718,37 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 2025-05-31 05:45:03,161 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2570.729414785358, 'price0', 2568.47, datetime.datetime(2025, 5, 31, 5, 44, 50, 406380), 'buylong')
 2025-05-31 06:18:02,540 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2558.8845304158826, 'price0', 2557.15, datetime.datetime(2025, 5, 31, 6, 17, 49, 955950), 'buylong')
 2025-05-31 09:05:03,612 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2512.812164899583, 'price0', 2511.79, datetime.datetime(2025, 5, 31, 9, 4, 50, 629381), 'buylong')
+2025-05-31 12:39:49,537 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.164625128527, 'price0', 2519.92, datetime.datetime(2025, 5, 31, 12, 39, 31, 663384), 'buyshort')
+2025-05-31 12:43:03,154 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.4259436512893, 'price0', 2520.36, datetime.datetime(2025, 5, 31, 12, 42, 47, 7741), 'buyshort')
+2025-05-31 13:18:00,595 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 13:21:37,231 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 13:27:29,404 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:08:55,360 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:13:29,520 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:18:40,866 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:23:29,351 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:27:08,579 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:30:52,915 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:32:40,111 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:39:53,232 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 14:53:04,308 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 15:10:58,439 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 15:11:47,137 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 15:12:40,803 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 15:13:09,453 - INFO - Dash is running on http://127.0.0.1:8050/
+
