@@ -12,8 +12,11 @@ from plotly.subplots import make_subplots
 import LHFrameStd
 from yyyyy2_okx_5m import trade_coin
 
+from db_client import SQLiteWALClient
+
 symbol = "ETH-USDT-SWAP"
-csv_path = f"{symbol}_4s_ohlcv.csv"
+DB_PATH = f'{symbol}.db'
+client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv")
 
 trade_client = None
 
@@ -61,17 +64,20 @@ vars_to_plot = list(colors.keys())
     Input("interval", "n_intervals")
 )
 def update_graph(n):
-    if not os.path.exists(csv_path):
-        return go.Figure(), "CSV文件不存在"
-
     try:
-        # 1. 读取 CSV（带锁重试）
-        while True:
-            try:
-                df = pd.read_csv(csv_path)
-                break
-            except Exception:
-                time.sleep(0.1)
+        # 1. 从 SQLite 读最新 2000 条
+        try:
+            # 先拿最新 2000 条（倒序）
+            df = client.read_df(limit=1500, order_by="ts DESC")
+            if df.empty:
+                return go.Figure(), "暂无数据"
+
+            # 再正序排列
+            df = df.sort_values("ts", ascending=True)
+        except Exception as e:
+            return go.Figure(), f"读取数据库错误：{e}"
+        if df.empty:
+            return go.Figure(), "暂无数据"
 
         # 2. 检查必须列
         required = {"ts","open","high","low","close","vol"}
@@ -85,8 +91,11 @@ def update_graph(n):
         df["datetime"] = pd.to_datetime(df["ts"], unit="s")
 
         # 4. 计算所有 vpPOC / VWAP / STD 系列
+        before_cal = time.time()
         multiVwap = LHFrameStd.MultiTFvpPOC()
         multiVwap.calculate_SFrame_vpPOC_and_std(df)
+        after_calc = time.time()
+        print(f'time consumed:{after_calc - before_cal}')
 
         # 5. 找到第一个非 NaN 的 HFrame 下轨止损线索引，同步截断
         start = multiVwap.HFrame_vwap_down_sl.first_valid_index()
@@ -138,6 +147,52 @@ def update_graph(n):
             name="Volume"
         ), row=2, col=1)
 
+
+        # … 前面已经 add_trace 画完所有线后 …
+
+        # --------- 填充 HFrame 上轨 getin 到 sl 之间的色带 ---------
+        # 1) 先画下边界（getin），线宽设为 0，不显示图例
+        fig.add_trace(go.Scatter(
+            x=df["datetime"],
+            y=multiVwap.HFrame_vwap_up_getin.values,
+            mode="lines",
+            line=dict(width=0),
+            showlegend=False
+        ), row=1, col=1)
+
+        # 2) 再画上边界（sl），并填充到前一条 trace
+        fig.add_trace(go.Scatter(
+            x=df["datetime"],
+            y=multiVwap.HFrame_vwap_up_sl.values,
+            mode="lines",
+            line=dict(width=0),
+            fill="tonexty",
+            fillcolor="rgba(255,105,180,0.2)",  # 热粉色半透明
+            name="HFrame_up_band"
+        ), row=1, col=1)
+
+
+        # --------- 填充 HFrame 下轨 sl 到 getin 之间的色带 ---------
+        # 1) 先画下边界（sl）
+        fig.add_trace(go.Scatter(
+            x=df["datetime"],
+            y=multiVwap.HFrame_vwap_down_sl.values,
+            mode="lines",
+            line=dict(width=0),
+            showlegend=False
+        ), row=1, col=1)
+
+        # 2) 再画上边界（getin），并填充到前一条 trace
+        fig.add_trace(go.Scatter(
+            x=df["datetime"],
+            y=multiVwap.HFrame_vwap_down_getin.values,
+            mode="lines",
+            line=dict(width=0),
+            fill="tonexty",
+            fillcolor="rgba(173,216,230,0.2)",  # 淡天蓝色半透明
+            name="HFrame_down_band"
+        ), row=1, col=1)
+
         # 10. 布局调整
         fig.update_layout(
             xaxis_rangeslider_visible=False,
@@ -146,6 +201,7 @@ def update_graph(n):
         )
         fig.update_yaxes(title_text="Price", row=1, col=1)
         fig.update_yaxes(title_text="Volume", row=2, col=1)
+
 
         return fig, "数据读取正常，自动刷新"
     except Exception as e:

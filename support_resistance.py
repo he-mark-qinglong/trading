@@ -8,7 +8,8 @@ def consecutive_rise(close_series, n=8):
 
 # 连续5根K线都在下轨以下（你的原始逻辑）
 def consecutive_below_support(close_series, support_series, n=8):
-    return sum(close_series.iloc[-n:] - support_series.iloc[-n:] < 0) == n
+    _2N = n * 2
+    return sum(close_series.iloc[-_2N:] - support_series.iloc[-_2N:] < 0) > n
     # count = 0
 
     # # 从倒数第 n 个到最后一项，逐一对比
@@ -29,7 +30,8 @@ def consecutive_below_support(close_series, support_series, n=8):
 
 # 连续5根K线都在上轨以上
 def consecutive_above_resistance(close_series, resistance_series, n=8):
-    return sum(close_series.iloc[-n:] - resistance_series.iloc[-n:] > 0) == n
+    _2N = n * 2
+    return sum(close_series.iloc[-_2N:] - resistance_series.iloc[-_2N:] > 0) > n
     # count = 0
 
     # # 从倒数第 n 个到最后一项，逐一对比

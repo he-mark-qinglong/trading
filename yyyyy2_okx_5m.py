@@ -25,6 +25,9 @@ lock = threading.Lock()
 import logging
 import traceback# traceback.print_exc()
 from collections import deque
+from db_client import SQLiteWALClient
+
+
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
 
@@ -65,6 +68,10 @@ class trade_coin(object):
 
         self.short_order_record_time = None
         self.long_order_record_time = None
+
+        DB_PATH = f'{symbol}.db'
+        self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv")
+
 
         if 'ETH' in self.symbol:
             self.asset_coe=100
@@ -169,6 +176,15 @@ class trade_coin(object):
                 multiFrame_vpPOC_short = 0
                 multiFrame_vpPOC_long = 0
 
+                SFrame_vwap_down_getin = multFramevpPOC.SFrame_vwap_down_getin.iloc[-1]
+                SFrame_vwap_up_getin = multFramevpPOC.SFrame_vwap_up_getin.iloc[-1]
+                SFrame_vwap_up_getout = multFramevpPOC.SFrame_vwap_up_getout.iloc[-1]
+                SFrame_vwap_down_getout = multFramevpPOC.SFrame_vwap_down_getout.iloc[-1]
+                SFrame_vwap_up_poc = multFramevpPOC.SFrame_vwap_up.iloc[-1]
+                SFrame_vwap_down_poc = multFramevpPOC.SFrame_vwap_down.iloc[-1]
+                SFrame_vwap_down_sl = multFramevpPOC.SFrame_vwap_down_sl.iloc[-1]
+                SFrame_vwap_up_sl = multFramevpPOC.SFrame_vwap_up_sl.iloc[-1]
+
                 HFrame_vwap_down_getin = multFramevpPOC.HFrame_vwap_down_getin.iloc[-1]
                 HFrame_vwap_up_getin = multFramevpPOC.HFrame_vwap_up_getin.iloc[-1]
                 HFrame_vwap_up_getout = multFramevpPOC.HFrame_vwap_up_getout.iloc[-1]
@@ -181,19 +197,20 @@ class trade_coin(object):
                 cur_high = hh2.iloc[-1]
                 is_short_un_opend = len(buy_total_short) == 0
                 if is_short_un_opend:
-                    conecutive_above = support_resistance.consecutive_above_resistance(close, multFramevpPOC.HFrame_vwap_up, 10)
-                    close_above_getin = (cur_close > HFrame_vwap_up_getin)
-                    if  ( conecutive_above and close_above_getin) or cur_close >= HFrame_vwap_up_sl: 
+                    conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevpPOC.SFrame_vwap_up, 10)
+                    #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
+                    close_above_getin = (cur_close > SFrame_vwap_up_getin and cur_close > HFrame_vwap_up_getin)
+                    if  ( conecutive_above_s and close_above_getin) or (cur_close >= SFrame_vwap_up_sl and cur_close >= HFrame_vwap_up_sl): 
                         multiFrame_vpPOC_short=1
                         self.short_order_record_time = time.time()
 
                         print("open", "-"*100)
                 else:  #加仓条件
-                    betterThanPreLong = float(buy_total_short['price'].iloc[-1]) < cur_close
-                    time_cond =  time.time() - float(buy_total_short['record_time'].iloc[-1]) > 50*len(buy_total_short)
-                    conecutive_above = support_resistance.consecutive_above_resistance(close, multFramevpPOC.HFrame_vwap_up, 7 )
+                    betterThanPreLong = float(buy_total_short['price'].iloc[-1]) < cur_close  #更高的价格才加空仓
+                    time_cond =  time.time() - float(buy_total_short['record_time'].iloc[-1]) > 20*len(buy_total_short)
+                    conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevpPOC.SFrame_vwap_up, 7 )
                     close_above_getin = (cur_close > HFrame_vwap_up_getin)
-                    if ( conecutive_above and close_above_getin)\
+                    if ( conecutive_above_s and close_above_getin)\
                             and time_cond and betterThanPreLong:
                         multiFrame_vpPOC_short=1
 
@@ -202,20 +219,21 @@ class trade_coin(object):
                 
                 is_long_un_opend = len(buy_total_long) == 0
                 if is_long_un_opend:
-                    consecutive_break_resistance = support_resistance.consecutive_below_support(close, multFramevpPOC.HFrame_vwap_down, 10)
-                    close_below_getin = HFrame_vwap_down_getin > cur_close #and cur_low = ll2.iloc[-1] >= HFrame_vwap_down_sl
-                    if (consecutive_break_resistance and close_below_getin) or HFrame_vwap_down_sl >= cur_close:  
+                    consecutive_break_resistance_s = support_resistance.consecutive_below_support(close, multFramevpPOC.SFrame_vwap_down, 10)
+                    #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
+                    close_below_getin = SFrame_vwap_down_getin > cur_close and HFrame_vwap_down_getin > cur_close
+                    if (consecutive_break_resistance_s and close_below_getin) or (SFrame_vwap_down_sl >= cur_close and HFrame_vwap_down_sl >= cur_close):  
                         
                         multiFrame_vpPOC_long=1
                         self.long_order_record_time = time.time()
 
                         print("open", "+"*100)
                 else:  #加仓条件
-                    betterThanPreShort = float(buy_total_long['price'].iloc[-1])  > cur_close
-                    time_cond = time.time()-float(buy_total_long['record_time'].iloc[-1]) > 50*len(buy_total_long)
-                    consecutive_break_resistance = support_resistance.consecutive_below_support(close, multFramevpPOC.HFrame_vwap_down, 7)
+                    betterThanPreShort = float(buy_total_long['price'].iloc[-1])  > cur_close  #更低的价格才加多仓
+                    time_cond = time.time()-float(buy_total_long['record_time'].iloc[-1]) > 20*len(buy_total_long)
+                    consecutive_break_resistance_s = support_resistance.consecutive_below_support(close, multFramevpPOC.SFrame_vwap_down, 7)
                     close_below_getin = HFrame_vwap_down_getin > cur_close
-                    if (consecutive_break_resistance and close_below_getin) \
+                    if (consecutive_break_resistance_s and close_below_getin) \
                         and time_cond and betterThanPreShort:
 
                         multiFrame_vpPOC_long=1
@@ -390,16 +408,16 @@ class trade_coin(object):
                     if amount_short>0:
                         short_profit = upl_short/notionalUsd_short
                         tp_condition = (#short_profit >stop_profit or\
-                                        (cur_close <= HFrame_vwap_down_poc and short_profit > fee_require_profit)) or\
-                                        (cur_close <= HFrame_vwap_down_sl )  #最后一种，不论盈亏都应该平仓。
-                        bool_series = (multFramevpPOC.HFrame_vwap_up_sl.iloc[-3:] < hh2.iloc[-3:])
+                                        (cur_close <= SFrame_vwap_down_poc and short_profit > fee_require_profit)) or\
+                                        (cur_close <= SFrame_vwap_down_sl )  #最后一种，不论盈亏都应该平仓。
+                        bool_series = (multFramevpPOC.SFrame_vwap_up_sl.iloc[-3:] < hh2.iloc[-3:])
                         # 最近三根K线中有2根以上为True
                         sl_condition = bool_series.iloc[-3:].sum() >= 2
                         
                         if tp_condition or sl_condition:
                             model='sellshort'
                             # price0=cur_close
-                            price0 = HFrame_vwap_down_getout if tp_condition else HFrame_vwap_up_sl
+                            price0 = SFrame_vwap_down_getout if tp_condition else SFrame_vwap_up_sl
                             price=price0*(1-0.0001)
                             amount=max(amount_short, 1)
                             symbol=self.symbol
@@ -413,14 +431,14 @@ class trade_coin(object):
                     if amount_long>0:
                         long_profit = upl_long/notionalUsd_long
                         tp_condition = (#long_profit>stop_profit or 
-                                        (cur_close >= HFrame_vwap_up_poc and long_profit > fee_require_profit))  or \
-                                            (cur_close >= HFrame_vwap_up_sl)
-                        bool_series = (multFramevpPOC.HFrame_vwap_down_sl.iloc[-3:] > ll2.iloc[-3:])
+                                        (cur_close >= SFrame_vwap_up_poc and long_profit > fee_require_profit))  or \
+                                            (cur_close >= SFrame_vwap_up_sl)
+                        bool_series = (multFramevpPOC.SFrame_vwap_down_sl.iloc[-3:] > ll2.iloc[-3:])
                         # 最近三根K线中有2根以上为True
                         sl_condition = bool_series.iloc[-3:].sum() >= 2
                         if tp_condition or sl_condition:
                             model='selllong'
-                            price0=  HFrame_vwap_up_getout if tp_condition else HFrame_vwap_down_sl
+                            price0=  SFrame_vwap_up_getout if tp_condition else SFrame_vwap_down_sl
                             price=price0*(1.00 - 0.0001)
                             amount=max(amount_long, 1)
                             symbol=self.symbol
@@ -526,10 +544,17 @@ class trade_coin(object):
         self.coin_data: 历史拼接过的数据
         self.last_timestamp: 记录最后K线的时间戳
         """
-        csv_path = self.symbol + "_4s_ohlcv.csv"
-        d = pd.read_csv(csv_path)
-        self.coin_data = d.iloc[-min(1000, len(d)):]
+
+        # 1. 从 SQLite 读最新 2000 条
+        try:
+            # 先拿最新 2000 条（倒序）
+            df = self.client.read_df(limit=1000, order_by="ts DESC")
+            self.coin_data = df.sort_values("ts", ascending=True)
+        except Exception as e:
+            print(f"读取数据库错误：{e}", '&&&'*10)
+
         return self.coin_data
+    
     def close_all_positions(self):
         """
         一键平掉所有多/空仓。
