@@ -2752,3 +2752,99 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 
 2025-05-31 15:13:09,453 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-05-31 15:53:52,863 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.35493543434, 'price0', 2522.22, datetime.datetime(2025, 5, 31, 15, 53, 36, 269832), 'buyshort')
+2025-05-31 15:54:49,684 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.617685932749, 'price0', 2522.99, datetime.datetime(2025, 5, 31, 15, 54, 37, 775144), 'buyshort')
+2025-05-31 16:04:38,510 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2524.0832093483873, 'price0', 2524.17, datetime.datetime(2025, 5, 31, 16, 4, 26, 618180), 'buyshort')
+2025-05-31 16:06:11,275 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2524.0821728742103, 'price0', 2524.26, datetime.datetime(2025, 5, 31, 16, 5, 59, 215941), 'buyshort')
+2025-05-31 16:16:15,999 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.3901098809024, 'price0', 2518.0, datetime.datetime(2025, 5, 31, 16, 16, 4, 58273), 'buylong')
+2025-05-31 16:17:12,928 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2516.2736309697125, 'price0', 2516.38, datetime.datetime(2025, 5, 31, 16, 17, 0, 874870), 'buylong')
+2025-05-31 16:41:44,150 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2515.5781282376893, 'price0', 2515.1, datetime.datetime(2025, 5, 31, 16, 41, 31, 848083), 'buylong')
+2025-05-31 16:42:58,883 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2515.285405840704, 'price0', 2515.0, datetime.datetime(2025, 5, 31, 16, 42, 46, 817791), 'buylong')
+2025-05-31 16:48:49,354 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2526.3977169089894, 'price0', 2527.97, datetime.datetime(2025, 5, 31, 16, 48, 37, 303559), 'buyshort')
+2025-05-31 16:49:46,381 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2527.414823986614, 'price0', 2527.83, datetime.datetime(2025, 5, 31, 16, 49, 34, 402629), 'buyshort')
+2025-05-31 17:20:34,741 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.9645169183223, 'price0', 2521.4, datetime.datetime(2025, 5, 31, 17, 20, 22, 802612), 'buylong')
+2025-05-31 17:21:49,557 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.8660968543454, 'price0', 2518.89, datetime.datetime(2025, 5, 31, 17, 21, 37, 589610), 'buylong')
+2025-05-31 17:22:35,044 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.136111356702, 'price0', 2519.0, datetime.datetime(2025, 5, 31, 17, 22, 23, 153277), 'buylong')
+2025-05-31 17:24:36,758 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.5157083407266, 'price0', 2517.54, datetime.datetime(2025, 5, 31, 17, 24, 24, 811640), 'buylong')
+2025-05-31 17:28:01,451 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2516.557726370516, 'price0', 2516.23, datetime.datetime(2025, 5, 31, 17, 27, 49, 458757), 'buylong')
+2025-05-31 17:59:13,408 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.337612278858, 'price0', 2522.74, datetime.datetime(2025, 5, 31, 17, 59, 1, 490999), 'buyshort')
+2025-05-31 18:05:55,734 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.6487667744286, 'price0', 2523.61, datetime.datetime(2025, 5, 31, 18, 5, 43, 754438), 'buyshort')
+2025-05-31 18:14:42,127 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2526.0139798297664, 'price0', 2526.49, datetime.datetime(2025, 5, 31, 18, 14, 30, 156955), 'buyshort')
+2025-05-31 18:29:47,815 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.9620189797893, 'price0', 2520.69, datetime.datetime(2025, 5, 31, 18, 29, 35, 903629), 'buylong')
+2025-05-31 18:32:57,393 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.1732059972132, 'price0', 2517.77, datetime.datetime(2025, 5, 31, 18, 32, 45, 384416), 'buylong')
+2025-05-31 18:36:03,152 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2517.574268901717, 'price0', 2516.24, datetime.datetime(2025, 5, 31, 18, 35, 51, 221341), 'buylong')
+2025-05-31 18:37:35,244 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2516.6311639050646, 'price0', 2515.42, datetime.datetime(2025, 5, 31, 18, 37, 23, 328791), 'buylong')
+2025-05-31 18:38:31,784 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2514.688736305327, 'price0', 2514.0, datetime.datetime(2025, 5, 31, 18, 38, 19, 881674), 'buylong')
+2025-05-31 18:39:17,502 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2514.1592371682027, 'price0', 2514.83, datetime.datetime(2025, 5, 31, 18, 39, 5, 360385), 'buylong')
+2025-05-31 18:40:49,686 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2514.176535150015, 'price0', 2513.95, datetime.datetime(2025, 5, 31, 18, 40, 37, 775256), 'buylong')
+2025-05-31 18:46:22,203 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2513.7610699634524, 'price0', 2512.75, datetime.datetime(2025, 5, 31, 18, 46, 10, 278992), 'buylong')
+2025-05-31 19:01:27,403 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.8027555172744, 'price0', 2519.89, datetime.datetime(2025, 5, 31, 19, 1, 15, 481063), 'buyshort')
+2025-05-31 19:02:59,817 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.211938026021, 'price0', 2520.15, datetime.datetime(2025, 5, 31, 19, 2, 47, 806619), 'buyshort')
+2025-05-31 19:40:50,991 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2517.2608345728418, 'price0', 2517.89, datetime.datetime(2025, 5, 31, 19, 40, 39, 70517), 'buyshort')
+2025-05-31 19:41:47,873 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2517.694951471528, 'price0', 2517.99, datetime.datetime(2025, 5, 31, 19, 41, 35, 929631), 'buyshort')
+2025-05-31 19:55:37,307 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.1123544331813, 'price0', 2519.7, datetime.datetime(2025, 5, 31, 19, 55, 25, 404436), 'buyshort')
+2025-05-31 20:06:54,418 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.4513118633977, 'price0', 2519.7, datetime.datetime(2025, 5, 31, 20, 6, 42, 490891), 'buyshort')
+2025-05-31 20:10:00,508 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2524.4631176754892, 'price0', 2524.62, datetime.datetime(2025, 5, 31, 20, 9, 48, 241254), 'buyshort')
+2025-05-31 20:37:11,669 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-05-31 21:23:07,795 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2529.889690473527, 'price0', 2530.64, datetime.datetime(2025, 5, 31, 21, 22, 55, 688673), 'buylong')
+2025-06-01 02:13:56,581 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 03:02:07,830 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2540.0743500067083, 'price0', 2540.83, datetime.datetime(2025, 6, 1, 3, 1, 55, 889157), 'buyshort')
+2025-06-01 03:03:22,956 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2541.6814879824383, 'price0', 2541.79, datetime.datetime(2025, 6, 1, 3, 3, 10, 493396), 'buyshort')
+2025-06-01 05:00:42,415 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2543.2582274387705, 'price0', 2543.5, datetime.datetime(2025, 6, 1, 5, 0, 30, 101491), 'buyshort')
+2025-06-01 06:26:00,423 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2535.7754989170426, 'price0', 2535.11, datetime.datetime(2025, 6, 1, 6, 25, 48, 492094), 'buylong')
+2025-06-01 06:57:38,081 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2531.185750324511, 'price0', 2530.67, datetime.datetime(2025, 6, 1, 6, 57, 26, 165065), 'buylong')
+2025-06-01 07:01:01,148 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2528.359789407887, 'price0', 2527.86, datetime.datetime(2025, 6, 1, 7, 0, 49, 76910), 'buylong')
+2025-06-01 07:15:21,942 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2538.5029503606893, 'price0', 2541.27, datetime.datetime(2025, 6, 1, 7, 15, 9, 958457), 'buyshort')
+2025-06-01 07:48:04,352 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2527.026362652258, 'price0', 2526.81, datetime.datetime(2025, 6, 1, 7, 47, 52, 350916), 'buylong')
+2025-06-01 08:02:30,945 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2524.888073568348, 'price0', 2523.75, datetime.datetime(2025, 6, 1, 8, 2, 19, 30319), 'buylong')
+2025-06-01 08:13:25,608 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.0063496136245, 'price0', 2518.85, datetime.datetime(2025, 6, 1, 8, 13, 13, 676514), 'buylong')
+2025-06-01 08:45:50,428 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2521.3684388121737, 'price0', 2521.79, datetime.datetime(2025, 6, 1, 8, 45, 38, 274742), 'buyshort')
+2025-06-01 08:47:11,231 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.989582414554, 'price0', 2523.5, datetime.datetime(2025, 6, 1, 8, 46, 58, 848177), 'buyshort')
+2025-06-01 09:43:15,974 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2516.6266194839836, 'price0', 2516.21, datetime.datetime(2025, 6, 1, 9, 43, 4, 30638), 'buylong')
+2025-06-01 09:46:35,901 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 09:46:48,373 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 09:54:03,041 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2509.340533032079, 'price0', 2508.59, datetime.datetime(2025, 6, 1, 9, 53, 51, 113437), 'buylong')
+2025-06-01 11:46:27,443 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2510.859864986688, 'price0', 2511.67, datetime.datetime(2025, 6, 1, 11, 46, 15, 588489), 'buyshort')
+2025-06-01 12:30:57,155 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2516.4088238391146, 'price0', 2517.09, datetime.datetime(2025, 6, 1, 12, 30, 45, 226412), 'buyshort')
+2025-06-01 12:32:05,436 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.180282721925, 'price0', 2519.29, datetime.datetime(2025, 6, 1, 12, 31, 53, 496708), 'buyshort')
+2025-06-01 12:38:23,067 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.3946670420223, 'price0', 2521.33, datetime.datetime(2025, 6, 1, 12, 38, 21, 205297), 'buyshort')
+2025-06-01 12:38:27,125 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.4636057829393, 'price0', 2521.12, datetime.datetime(2025, 6, 1, 12, 38, 25, 301990), 'buyshort')
+2025-06-01 12:38:43,748 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.7270574055206, 'price0', 2521.23, datetime.datetime(2025, 6, 1, 12, 38, 41, 939135), 'buyshort')
+2025-06-01 12:38:51,115 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.8717834849845, 'price0', 2521.36, datetime.datetime(2025, 6, 1, 12, 38, 49, 267106), 'buyshort')
+2025-06-01 12:38:55,274 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2520.965970911615, 'price0', 2521.42, datetime.datetime(2025, 6, 1, 12, 38, 53, 404537), 'buyshort')
+2025-06-01 12:39:02,509 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2521.121630411851, 'price0', 2521.55, datetime.datetime(2025, 6, 1, 12, 39, 0, 651316), 'buyshort')
+2025-06-01 12:39:11,305 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2521.2600147615644, 'price0', 2521.72, datetime.datetime(2025, 6, 1, 12, 39, 9, 454483), 'buyshort')
+2025-06-01 12:39:22,086 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2521.6480317185233, 'price0', 2523.31, datetime.datetime(2025, 6, 1, 12, 39, 20, 204315), 'buyshort')
+2025-06-01 12:39:26,176 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2521.8422308411864, 'price0', 2522.68, datetime.datetime(2025, 6, 1, 12, 39, 24, 290117), 'buyshort')
+2025-06-01 12:39:30,414 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.008234995962, 'price0', 2523.09, datetime.datetime(2025, 6, 1, 12, 39, 28, 560840), 'buyshort')
+2025-06-01 12:39:37,438 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.148936189582, 'price0', 2522.72, datetime.datetime(2025, 6, 1, 12, 39, 35, 526416), 'buyshort')
+2025-06-01 12:39:41,517 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.253957325323, 'price0', 2522.7, datetime.datetime(2025, 6, 1, 12, 39, 39, 711880), 'buyshort')
+2025-06-01 12:40:55,496 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2522.749903902161, 'price0', 2524.21, datetime.datetime(2025, 6, 1, 12, 40, 52, 606755), 'buyshort')
+2025-06-01 13:21:47,096 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.650829133762, 'price0', 2518.82, datetime.datetime(2025, 6, 1, 13, 21, 45, 271552), 'buylong')
+2025-06-01 13:21:52,425 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.516407538172, 'price0', 2518.74, datetime.datetime(2025, 6, 1, 13, 21, 50, 542456), 'buylong')
+2025-06-01 13:21:56,523 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.3765146966766, 'price0', 2518.51, datetime.datetime(2025, 6, 1, 13, 21, 54, 705999), 'buylong')
+2025-06-01 13:22:00,653 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.3293725824255, 'price0', 2518.52, datetime.datetime(2025, 6, 1, 13, 21, 58, 798198), 'buylong')
+2025-06-01 13:22:05,846 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.219591933135, 'price0', 2518.74, datetime.datetime(2025, 6, 1, 13, 22, 4, 8007), 'buylong')
+2025-06-01 13:22:10,069 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.1117265593502, 'price0', 2518.55, datetime.datetime(2025, 6, 1, 13, 22, 8, 191273), 'buylong')
+2025-06-01 13:22:14,212 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2519.067256155935, 'price0', 2518.54, datetime.datetime(2025, 6, 1, 13, 22, 12, 317755), 'buylong')
+2025-06-01 13:22:19,503 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.6501249455796, 'price0', 2517.72, datetime.datetime(2025, 6, 1, 13, 22, 17, 650486), 'buylong')
+2025-06-01 13:22:23,484 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.4865080259137, 'price0', 2517.71, datetime.datetime(2025, 6, 1, 13, 22, 21, 629846), 'buylong')
+2025-06-01 13:22:29,580 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.3544274066103, 'price0', 2517.71, datetime.datetime(2025, 6, 1, 13, 22, 27, 679348), 'buylong')
+2025-06-01 13:22:34,805 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.199399328621, 'price0', 2517.66, datetime.datetime(2025, 6, 1, 13, 22, 32, 954909), 'buylong')
+2025-06-01 13:22:38,869 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.0914473159587, 'price0', 2517.65, datetime.datetime(2025, 6, 1, 13, 22, 37, 290), 'buylong')
+2025-06-01 13:22:42,847 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2518.012359292769, 'price0', 2517.83, datetime.datetime(2025, 6, 1, 13, 22, 40, 975141), 'buylong')
+2025-06-01 14:16:51,505 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2514.4264697328404, 'price0', 2513.11, datetime.datetime(2025, 6, 1, 14, 16, 38, 755224), 'buylong')
+2025-06-01 15:08:53,229 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 15:14:20,321 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 15:15:49,845 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 15:20:53,848 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 15:21:59,865 - INFO - Dash is running on http://127.0.0.1:8050/
+

@@ -5,256 +5,7 @@ import pandas_ta as ta
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-
-def vpvr_pct_band_vwap_boundary_enhanced(src, open_prices, close_prices, vol, length, bins, pct, decay, 
-                                       vwap_series=None, use_delta=False, use_vol_filter=False, 
-                                       use_external_vwap=False):
-    """
-    增强版VPVR百分位带状VWAP边界计算
-    
-    参数:
-        src: pd.Series, 价格序列(通常是典型价格)
-        open_prices: pd.Series, 开盘价
-        close_prices: pd.Series, 收盘价  
-        vol: pd.Series, 成交量
-        length: int, 滑窗长度
-        bins: int, 分桶数量
-        pct: float, 累计包含的成交量比例(0~1)
-        decay: float, 时间加权衰减因子
-        vwap_series: pd.Series, 外部VWAP序列(可选)
-        use_delta: bool, 是否使用delta成交量(有向成交量绝对值)
-        use_vol_filter: bool, 是否启用成交量过滤(只计算大于均值的K线)
-        use_external_vwap: bool, 是否使用外部VWAP作为中心(否则使用POC)
-    
-    返回:
-        tuple: (band_low, band_high, center_vwap) 三个pd.Series
-    """
-    import pandas as pd
-    import numpy as np
-    
-    src = pd.Series(src)
-    open_prices = pd.Series(open_prices)
-    close_prices = pd.Series(close_prices)
-    vol = pd.Series(vol)
-    
-    if vwap_series is not None:
-        vwap_series = pd.Series(vwap_series)
-    
-    index = src.index
-    band_low = np.full(len(src), np.nan)
-    band_high = np.full(len(src), np.nan) 
-    center_vwap = np.full(len(src), np.nan)
-    
-    for end in range(length-1, len(src)):
-        slc = slice(end-length+1, end+1)
-        s = src.iloc[slc].values
-        o = open_prices.iloc[slc].values
-        c = close_prices.iloc[slc].values
-        v = vol.iloc[slc].values
-        
-        # 计算价格范围
-        lowv = np.min(s)
-        highv = np.max(s)
-        binsize = max((highv - lowv) / bins, 1e-8)
-        accum = np.zeros(bins)
-        
-        # 量过滤：计算成交量均值
-        vmean = np.mean(v) if use_vol_filter else 0
-        
-        # 累积到bins
-        for j in range(length):
-            pricej = s[j]
-            openj = o[j]
-            closej = c[j]
-            volj = v[j]
-            
-            # 量过滤判断
-            if use_vol_filter and volj <= vmean:
-                continue
-                
-            # 计算权重
-            weightj = decay**(length - 1 - j)
-            
-            # 计算bin索引
-            bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
-            bini = max(0, min(bins - 1, bini))
-            
-            # 根据是否使用delta选择累积方式
-            if use_delta:
-                # 计算有向成交量的绝对值
-                if closej > openj:
-                    deltaj = volj
-                elif closej < openj:
-                    deltaj = -volj
-                else:
-                    deltaj = 0
-                accum[bini] += abs(deltaj) * weightj
-            else:
-                # 普通成交量
-                accum[bini] += volj * weightj
-        
-        total_vol = np.sum(accum)
-        if total_vol == 0:
-            continue
-            
-        # 确定中心点
-        if use_external_vwap and vwap_series is not None:
-            # 使用外部VWAP确定中心
-            vv = vwap_series.iloc[end]
-            center_idx = int(np.floor((bins - 1) * (vv - lowv) / max(highv - lowv, 1e-8)))
-            center_idx = max(0, min(bins - 1, center_idx))
-        else:
-            # 使用POC(最大成交量bin)作为中心
-            center_idx = np.argmax(accum)
-        
-        # 从中心向两侧扩展
-        sum_vol = accum[center_idx]
-        left_idx = center_idx
-        right_idx = center_idx
-        
-        while sum_vol < total_vol * pct:
-            add_left = accum[left_idx - 1] if left_idx > 0 else -1
-            add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
-            
-            if add_left >= add_right and left_idx > 0:
-                left_idx -= 1
-                sum_vol += accum[left_idx]
-            elif right_idx < bins - 1:
-                right_idx += 1
-                sum_vol += accum[right_idx]
-            elif left_idx > 0:
-                left_idx -= 1
-                sum_vol += accum[left_idx]
-            else:
-                break
-        
-        # 计算中心区间的VWAP
-        # wsum_center = 0.0
-        # pvsum_center = 0.0
-        # for i in range(left_idx, right_idx + 1):
-        #     v_i = accum[i]
-        #     price_i = lowv + binsize * (i + 0.5)
-        #     wsum_center += v_i
-        #     pvsum_center += v_i * price_i
-        # center_vwap[end] = pvsum_center / wsum_center if wsum_center > 0 else np.nan
-        
-        # 计算左边界附近5个bins的加权均价
-        def calc_boundary_vwap(boundary_idx, is_left=True):
-            # 优先取boundary_idx上下各2个bins
-            start_i = max(0, boundary_idx - 2)
-            end_i = min(bins - 1, boundary_idx + 2)
-            
-            # 检查bins数量，如果不足5个则扩展
-            bins_count = end_i - start_i + 1
-            if bins_count < 5:
-                if is_left and end_i < bins - 1:
-                    # 左边界优先向上扩展
-                    end_i = min(bins - 1, start_i + 4)
-                elif not is_left and start_i > 0:
-                    # 右边界优先向下扩展  
-                    start_i = max(0, end_i - 4)
-            
-            # 再次检查，还不足则向另一侧扩展
-            bins_count = end_i - start_i + 1
-            if bins_count < 5:
-                if is_left and start_i > 0:
-                    start_i = max(0, end_i - 4)
-                elif not is_left and end_i < bins - 1:
-                    end_i = min(bins - 1, start_i + 4)
-            
-            # 计算这些bins的加权均价
-            wsum = 0.0
-            pvsum = 0.0
-            for i in range(start_i, end_i + 1):
-                v_i = accum[i]
-                price_i = lowv + binsize * (i + 0.5)
-                wsum += v_i
-                pvsum += v_i * price_i
-            
-            return pvsum / wsum if wsum > 0 else np.nan
-        
-        # 计算左右边界的加权均价
-        band_low[end] = calc_boundary_vwap(left_idx, is_left=True)
-        band_high[end] = calc_boundary_vwap(right_idx, is_left=False)
-    
-    return (pd.Series(band_low, index=index), 
-            pd.Series(band_high, index=index),
-            # pd.Series(center_vwap, index=index)
-            )
-    
-def vpvr_pct_band_vwap_decay_series(src, vol, length, bins, pct, decay):
-    """
-    输入:
-        src, vol: pd.Series (或可转Series的一维结构)
-        length: 窗口长度
-        bins: 分桶数
-        pct: 累计volume覆盖比例 (如0.7)
-        decay: 衰减系数 (如0.995)
-    输出:
-        pd.Series: 每根K线vwap, index与输入对齐
-    """
-    src = pd.Series(src)
-    vol = pd.Series(vol)
-    index = src.index
-    result = np.full(len(src), np.nan)
-
-    for end in range(length - 1, len(src)):
-        slc = slice(end - length + 1, end + 1)
-        s = src.iloc[slc].values
-        v = vol.iloc[slc].values
-
-        lowv, highv = np.min(s), np.max(s)
-        binsize = max((highv - lowv) / bins, 1e-8)
-        accum = np.zeros(bins)
-
-        for j in range(length):
-            pricej = s[j]
-            volj = v[j]
-            weightj = decay ** (length - 1 - j)
-            bini = int(np.floor((bins - 1) * (pricej - lowv) / max(highv - lowv, 1e-8)))
-            bini = max(0, min(bins - 1, bini))
-            accum[bini] += volj * weightj
-
-        total_vol = np.sum(accum)
-        if total_vol == 0:
-            continue
-
-        center_idx = np.argmax(accum)
-        sum_vol = accum[center_idx]
-        left_idx = center_idx
-        right_idx = center_idx
-
-        while sum_vol < total_vol * pct:
-            add_left = accum[left_idx - 1] if left_idx > 0 else -1
-            add_right = accum[right_idx + 1] if right_idx < bins - 1 else -1
-            if add_left >= add_right:
-                if left_idx > 0:
-                    left_idx -= 1
-                    sum_vol += accum[left_idx]
-                elif right_idx < bins - 1:
-                    right_idx += 1
-                    sum_vol += accum[right_idx]
-                else:
-                    break
-            else:
-                if right_idx < bins - 1:
-                    right_idx += 1
-                    sum_vol += accum[right_idx]
-                elif left_idx > 0:
-                    left_idx -= 1
-                    sum_vol += accum[left_idx]
-                else:
-                    break
-
-        wsum, pvsum = 0.0, 0.0
-        for i in range(left_idx, right_idx + 1):
-            v_i = accum[i]
-            price_i = lowv + binsize * (i + 0.5)
-            wsum += v_i
-            pvsum += v_i * price_i
-        result[end] = pvsum / wsum if wsum > 0 else np.nan
-
-    return pd.Series(result, index=index)
+import vwap_calc
 
 class MultiTFvpPOC:  
     def __init__(self,  
@@ -279,172 +30,194 @@ class MultiTFvpPOC:
        
 
         self.SFrame_vpPOC = None  
-        self.HFrame_ohlc5_series = None  
+        self.HFrame_vpPOC = None  
         self.HFrame_price_std = None  
 
-        self.HFrame_vwap_up = None
-        self.HFrame_vwap_up_getin = None
-        self.HFrame_vwap_up_getout = None
+        self.SFrame_vwap_up = None
+        self.SFrame_vwap_up_getin = None
+        self.SFrame_vwap_up_getout = None
 
-        self.HFrame_vwap_down = None
-        self.HFrame_vwap_down_getin = None
-        self.HFrame_vwap_down_getout = None
+        self.SFrame_vwap_down = None
+        self.SFrame_vwap_down_getin = None
+        self.SFrame_vwap_down_getout = None
         
-        self.HFrame_vwap_down_sl = None
-        self.HFrame_vwap_up_sl = None
-    def compute_structures(self, coin_date_df):
-        close = coin_date_df['close']
-        vol   = coin_date_df['vol']
-        open_ = coin_date_df['open']
+        self.SFrame_vwap_down_sl = None
+        self.SFrame_vwap_up_sl = None
+    
+    # def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
+    
+    #     open = coin_date_df['open']
+    #     high = coin_date_df['high']
+    #     low = coin_date_df['low']  
+    #     close = coin_date_df['close']  
+    #     vol = coin_date_df['vol']
 
-        # 定义并行计算函数
-        def calc_LFrame():
-            return vpvr_pct_band_vwap_decay_series(
-                close, vol, self.window_LFrame, 40, 0.995, 0.99
+    #     self.LFrame_vpPOC_series = vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_LFrame, 40, 0.995, 0.99)
+         
+    #     self.SFrame_vpPOC =  vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_SFrame, 40, 0.995, 0.99)   
+
+    #     low_poc, high_poc = vwap_calc.vpvr_pct_band_vwap_log_decay(
+    #                 open_prices=open,
+    #                 close_prices=close,
+    #                 vol=vol,
+    #                 length=self.window_SFrame,         # 滑动窗口长度
+    #                 bins=40,
+    #                 pct=0.07,
+    #                 decay=0.995,
+    #                 vwap_series=self.SFrame_vpPOC   # vwap请提前自行计算、赋值
+    #             )
+    #     self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index) 
+       
+
+    #     # weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
+    #     # weight_sum = weights_l + weights_c + weights_h + weights_o  
+    #     # ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
+    #     # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
+        
+    #     self.SFrame_vpPOC = ta.rma(self.SFrame_vpPOC, length=self.window_LFrame)
+
+    #     # 假设 close, SFrame_vpPOC, ohlc5 为 pd.Series
+    #     delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+    #     # 过去240根K线内的最大delta_high的绝对值
+    #     max_delta_high = delta_high.rolling(240).max().abs()
+
+    #     delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
+    #     # 过去240根K线内的最小delta_low的绝对值
+    #     min_delta_low = delta_low.rolling(240).min().abs()
+
+    #     # 取二者较大值
+    #     HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
+
+    #     # ohlc5标准差, 按HFrame_vpLen窗口计算
+    #     self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
+    #     self.HFrame_price_std.index = coin_date_df.index  
+        
+    #     self.SFrame_vwap_up = ta.rma(high_poc, length=self.window_LFrame)
+    #     self.SFrame_vwap_up_getin = ta.rma(high_poc + self.HFrame_price_std, length=self.window_LFrame)
+    #     self.SFrame_vwap_up_getout = ta.rma(high_poc - self.HFrame_price_std, length=self.window_LFrame)
+
+    #     self.SFrame_vwap_down = ta.rma(low_poc, length=self.window_LFrame)
+    #     self.SFrame_vwap_down_getin = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
+    #     self.SFrame_vwap_down_getout = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
+
+    #     self.SFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
+    #     self.SFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
+    def calculate_SFrame_vpPOC_and_std(self, coin_date_df):
+        open_  = coin_date_df['open']
+        high   = coin_date_df['high']
+        low    = coin_date_df['low']
+        close  = coin_date_df['close']
+        vol    = coin_date_df['vol']
+
+        # 并行执行 LFrame 和 SFrame 的中心 VWAP 计算
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_L = executor.submit(
+                vwap_calc.vpvr_center_vwap_log_decay,
+                open_, close, vol,
+                self.window_LFrame, 40, 0.995, 0.99
+            )
+            future_H = executor.submit(
+                vwap_calc.vpvr_center_vwap_log_decay,
+                open_, close, vol,
+                self.window_HFrame, 40, 0.995, 0.99
+            )
+            future_S = executor.submit(
+                vwap_calc.vpvr_center_vwap_log_decay,
+                open_, close, vol,
+                self.window_SFrame, 40, 0.995, 0.99
             )
 
-        def calc_SFrame_raw():
-            return vpvr_pct_band_vwap_decay_series(
-                close, vol, self.window_SFrame, 40, 0.995, 0.99
-            )
+            hframe_vp = future_H.result()
 
-        def calc_boundary(s_frame_raw):
-            return vpvr_pct_band_vwap_boundary_enhanced(
-                src=close,
+            # 等待 SFrame 完成后再启动 Band 计算
+            sframe_vp = future_S.result()
+            sfuture_band = executor.submit(
+                vwap_calc.vpvr_pct_band_vwap_log_decay,
                 open_prices=open_,
                 close_prices=close,
                 vol=vol,
                 length=self.window_SFrame,
                 bins=40,
-                pct=0.95,
+                pct=0.07,
                 decay=0.995,
-                vwap_series=s_frame_raw
+                vwap_series=sframe_vp
+            )
+            hfuture_band = executor.submit(
+                vwap_calc.vpvr_pct_band_vwap_log_decay,
+                open_prices=open_,
+                close_prices=close,
+                vol=vol,
+                length=self.window_HFrame,
+                bins=40,
+                pct=0.07,
+                decay=0.995,
+                vwap_series=hframe_vp
             )
 
-        # 最大并行数设置为 6～8
-        with ThreadPoolExecutor(max_workers=6) as exe:
-            # 阶段1：并行 LFrame 和 原始 SFrame
-            fut_L = exe.submit(calc_LFrame)
-            fut_Sr = exe.submit(calc_SFrame_raw)
+            # 取回结果
+            self.LFrame_vpPOC_series = future_L.result()
+            self.SFrame_vpPOC       = sframe_vp
+            self.HFrame_vpPOC       = hframe_vp
+            slow_poc, shigh_poc       = sfuture_band.result()
+            hlow_poc, hhigh_poc       = hfuture_band.result()
 
-            # 等待原始 SFrame，才能做后续两个依赖任务：SFrame 平滑 和 boundary
-            s_frame_raw = fut_Sr.result()
+        # 以下全为向量化运算
+        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
 
-            # 阶段2：并行 SFrame 平滑 & boundary
-            fut_Sm = exe.submit(ta.rma, s_frame_raw, self.window_LFrame)
-            fut_B  = exe.submit(calc_boundary, s_frame_raw)
-
-            # 收阶段2结果
-            self.SFrame_vpPOC = fut_Sm.result()
-            low_poc, high_poc = fut_B.result()
-
-            # 收阶段1 LFrame
-            self.LFrame_vpPOC_series = fut_L.result()
-
-            # 阶段3：HFrame_ohlc5 和 swing 标准差必须在线程外按顺序执行
-            self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
-            self.HFrame_ohlc5_series = self.LFrame_ohlc5_series
-
-            # 计算 swing 范围
-            delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
-            max_delta_high = delta_high.rolling(240).max().abs()
-            delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
-            min_delta_low = delta_low.rolling(240).min().abs()
-            HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
-
-            # 价格 std
-            self.HFrame_price_std = (
-                close.rolling(self.window_HFrame).std() * 0.9 +
-                HFrame_max_swing * 0.1
-            )
-            self.HFrame_price_std.index = coin_date_df.index
-
-            # 阶段4：并行所有 HFrame VWAP 系列 rma 计算
-            futs = {
-                'up':         exe.submit(ta.rma, high_poc,                      self.window_LFrame),
-                'up_getin':   exe.submit(ta.rma, high_poc + self.HFrame_price_std, self.window_LFrame),
-                'up_getout':  exe.submit(ta.rma, high_poc - self.HFrame_price_std, self.window_LFrame),
-                'down':       exe.submit(ta.rma, low_poc,                       self.window_LFrame),
-                'down_getin': exe.submit(ta.rma, low_poc - self.HFrame_price_std,  self.window_LFrame),
-                'down_getout':exe.submit(ta.rma, low_poc + self.HFrame_price_std,  self.window_LFrame),
-                'down_sl':    exe.submit(ta.rma, low_poc - 2*self.HFrame_price_std,self.window_LFrame),
-                'up_sl':      exe.submit(ta.rma, high_poc + 2*self.HFrame_price_std, self.window_LFrame),
-            }
-
-            # 收回结果
-            self.HFrame_vwap_up           = futs['up'].result()
-            self.HFrame_vwap_up_getin     = futs['up_getin'].result()
-            self.HFrame_vwap_up_getout    = futs['up_getout'].result()
-            self.HFrame_vwap_down         = futs['down'].result()
-            self.HFrame_vwap_down_getin   = futs['down_getin'].result()
-            self.HFrame_vwap_down_getout  = futs['down_getout'].result()
-            self.HFrame_vwap_down_sl      = futs['down_sl'].result()
-            self.HFrame_vwap_up_sl        = futs['up_sl'].result()
-    
-    def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
-        self.compute_structures(coin_date_df)
-        return
-    
-        open_ = coin_date_df['open']
-        high = coin_date_df['high']
-        low = coin_date_df['low']  
-        close = coin_date_df['close']  
-        vol = coin_date_df['vol']
-
-        self.LFrame_vpPOC_series = vpvr_pct_band_vwap_decay_series(close, vol, self.window_LFrame, 40, 0.995, 0.99)
-         
-        self.SFrame_vpPOC =  vpvr_pct_band_vwap_decay_series(close, vol, self.window_SFrame, 40, 0.995, 0.99)   
-
-        low_poc, high_poc = vpvr_pct_band_vwap_boundary_enhanced(
-                    src=coin_date_df['close'],
-                    open_prices=coin_date_df['open'],
-                    close_prices=coin_date_df['close'],
-                    vol=coin_date_df['vol'],
-                    length=self.window_SFrame,         # 滑动窗口长度
-                    bins=40,
-                    pct=0.95,
-                    decay=0.995,
-                    vwap_series=self.SFrame_vpPOC   # vwap请提前自行计算、赋值
-                )
-        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index) 
-       
-
-        # weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
-        # weight_sum = weights_l + weights_c + weights_h + weights_o  
-        # ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
-        # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
-        
+        # 对 SFrame_vpPOC 做 RMA 平滑
         self.SFrame_vpPOC = ta.rma(self.SFrame_vpPOC, length=self.window_LFrame)
-        self.HFrame_ohlc5_series = self.LFrame_ohlc5_series  
 
-        # 假设 close, SFrame_vpPOC, ohlc5 为 pd.Series
-        delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
-        # 过去240根K线内的最大delta_high的绝对值
+        # 计算 HFrame 的最大摆幅
+        delta_high = np.maximum(close - self.HFrame_vpPOC, 0)
         max_delta_high = delta_high.rolling(240).max().abs()
-
-        delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
-        # 过去240根K线内的最小delta_low的绝对值
+        delta_low  = np.minimum(close - self.HFrame_vpPOC, 0)
         min_delta_low = delta_low.rolling(240).min().abs()
-
-        # 取二者较大值
         HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
-
-        # ohlc5标准差, 按HFrame_vpLen窗口计算
-        self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
-        self.HFrame_price_std.index = coin_date_df.index  
         
-        self.HFrame_vwap_up = ta.rma(high_poc, length=self.window_LFrame)
-        self.HFrame_vwap_up_getin = ta.rma(high_poc + self.HFrame_price_std, length=self.window_LFrame)
-        self.HFrame_vwap_up_getout = ta.rma(high_poc - self.HFrame_price_std, length=self.window_LFrame)
+        # 计算 SFrame 的最大摆幅
+        delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+        max_delta_high = delta_high.rolling(240).max().abs()
+        delta_low  = np.minimum(close - self.SFrame_vpPOC, 0)
+        min_delta_low = delta_low.rolling(240).min().abs()
+        SFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
 
-        self.HFrame_vwap_down = ta.rma(low_poc, length=self.window_LFrame)
-        self.HFrame_vwap_down_getin = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
-        self.HFrame_vwap_down_getout = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
+        # 1. 计算 SFrame 的价格标准差
+        # HFrame 的价格标准差
+        self.SFrame_price_std = (
+            close.rolling(self.window_HFrame).std() * 0.9
+            + SFrame_max_swing * 0.1
+        )
+        self.SFrame_price_std.index = coin_date_df.index
+        
+        # 2. SFrame 上下边界及进出场线（用 ta.rma）
+        self.SFrame_vwap_up        = ta.rma(shigh_poc, length=self.window_LFrame)
+        self.SFrame_vwap_up_getin  = ta.rma(shigh_poc + self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_up_getout = ta.rma(shigh_poc - self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_up_sl     = ta.rma(shigh_poc + 2 * self.SFrame_price_std, length=self.window_LFrame)
 
-        self.HFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
-        self.HFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_down        = ta.rma(slow_poc, length=self.window_LFrame)
+        self.SFrame_vwap_down_getin  = ta.rma(slow_poc - self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_down_getout = ta.rma(slow_poc + self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_down_sl     = ta.rma(slow_poc - 2 * self.SFrame_price_std, length=self.window_LFrame)
 
+        # 3. 计算 HFrame 的价格标准差，并对齐索引
+        h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
+        self.HFrame_price_std = h_std.reindex(coin_date_df.index)
 
+        # 4. HFrame 上下边界及进出场线（元素级取最大/最小）
+        #    注意这里继续用 length=self.window_LFrame，若要用 HFrame 窗口可自行调整
+        rma = lambda series: ta.rma(series, length=self.window_LFrame)
+
+        self.HFrame_vwap_up        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
+        self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
+        self.HFrame_vwap_up_getout = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc - self.HFrame_price_std))
+        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + 2 * self.HFrame_price_std))
+
+        self.HFrame_vwap_down        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
+        self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - self.HFrame_price_std))
+        self.HFrame_vwap_down_getout = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc + self.HFrame_price_std))
+        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - 2 * self.HFrame_price_std))
+        
 import os
 import time
 import matplotlib  
@@ -460,15 +233,15 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
         'LFrame_vpPOC_series': 'yellow',
         'LFrame_ohlc5_series': 'green',
         'SFrame_vpPOC': 'purple',
-        'HFrame_vwap_up': 'red',
-        'HFrame_vwap_up_getin': 'orange',
-        'HFrame_vwap_up_getout': 'chocolate',
-        'HFrame_vwap_down': 'blue',
-        'HFrame_vwap_down_getin': 'deepskyblue',
-        'HFrame_vwap_down_getout': 'cyan',
+        'SFrame_vwap_up': 'red',
+        'SFrame_vwap_up_getin': 'orange',
+        'SFrame_vwap_up_getout': 'chocolate',
+        'SFrame_vwap_down': 'blue',
+        'SFrame_vwap_down_getin': 'deepskyblue',
+        'SFrame_vwap_down_getout': 'cyan',
 
-        'HFrame_vwap_up_sl': 'red',
-        'HFrame_vwap_down_sl': 'green',
+        'SFrame_vwap_up_sl': 'red',
+        'SFrame_vwap_down_sl': 'green',
     }
 
     # 依次绘制所有线
@@ -476,14 +249,14 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
         'LFrame_ohlc5_series',
         'LFrame_vpPOC_series',
         'SFrame_vpPOC',
-        'HFrame_vwap_up',
-        'HFrame_vwap_up_getin',
-        'HFrame_vwap_up_getout',
-        'HFrame_vwap_down',
-        'HFrame_vwap_down_getin',
-        'HFrame_vwap_down_getout',
-        'HFrame_vwap_up_sl',
-        'HFrame_vwap_down_sl',
+        'SFrame_vwap_up',
+        'SFrame_vwap_up_getin',
+        'SFrame_vwap_up_getout',
+        'SFrame_vwap_down',
+        'SFrame_vwap_down_getin',
+        'SFrame_vwap_down_getout',
+        'SFrame_vwap_up_sl',
+        'SFrame_vwap_down_sl',
     ]
     for var in vars_to_plot:
         val = getattr(multFramevpPOC, var, None)
