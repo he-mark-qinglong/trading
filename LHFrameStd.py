@@ -102,7 +102,7 @@ class MultiTFvp_poc:
 
     #     self.SFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
     #     self.SFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
-    def calculate_SFrame_vp_poc_and_std(self, coin_date_df):
+    def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
         open_  = coin_date_df['open']
         high   = coin_date_df['high']
         low    = coin_date_df['low']
@@ -114,17 +114,20 @@ class MultiTFvp_poc:
             future_L = executor.submit(
                 vwap_calc.vpvr_center_vwap_log_decay,
                 open_, close, vol,
-                self.window_LFrame, 40, 0.995, 0.99
+                self.window_LFrame, 40, 0.995, 0.99,
+                debug=debug,
             )
             future_H = executor.submit(
                 vwap_calc.vpvr_center_vwap_log_decay,
                 open_, close, vol,
-                self.window_HFrame, 40, 0.995, 0.99
+                self.window_HFrame, 40, 0.995, 0.99,
+                debug=debug,
             )
             future_S = executor.submit(
                 vwap_calc.vpvr_center_vwap_log_decay,
                 open_, close, vol,
-                self.window_SFrame, 40, 0.995, 0.99
+                self.window_SFrame, 40, 0.995, 0.99,
+                debug=debug,
             )
 
             hframe_vp = future_H.result()
@@ -140,7 +143,8 @@ class MultiTFvp_poc:
                 bins=40,
                 pct=0.1,
                 decay=0.995,
-                vwap_series=sframe_vp
+                vwap_series=sframe_vp,
+                debug=debug,
             )
             hfuture_band = executor.submit(
                 vwap_calc.vpvr_pct_band_vwap_log_decay,
@@ -151,7 +155,8 @@ class MultiTFvp_poc:
                 bins=40,
                 pct=0.1,
                 decay=0.995,
-                vwap_series=hframe_vp
+                vwap_series=hframe_vp,
+                debug=debug,
             )
 
             # 取回结果
@@ -361,7 +366,6 @@ def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading=False, save
         labelcolor="white"
     )
 
-    # ax_k.legend(loc='upper left', fontsize='small', facecolor='black', labelcolor='white')
     ax_k.grid(True, alpha=0.2)
     ax_vol.grid(True, alpha=0.15)
     # X轴日期格式

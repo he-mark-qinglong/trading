@@ -3,7 +3,7 @@ import numpy as np
 import traceback
 
 from numba import njit
-debug = False
+
 
 @njit
 def _boundary_vwap_numba(accum, lowv, binsize, start_i, end_i):
@@ -217,7 +217,7 @@ def vpvr_pct_band_vwap_log_decay_no_njit(
 def vpvr_pct_band_vwap_log_decay(
     open_prices, close_prices, vol, length, bins, pct, decay, 
     vwap_series=None, use_delta=False, use_vol_filter=False, 
-    use_external_vwap=True
+    use_external_vwap=True, debug=False
 ):
     """
     增强版 VPVR 百分位带状 VWAP 边界计算（log‐vol 版）
@@ -490,7 +490,7 @@ def center_vwap_log_decay_no_njit(
 
     return res.astype(float)  # 返回结果类型严格
 
-def vpvr_center_vwap_log_decay(open_prices, close_prices, vol, length, bins, pct, decay):
+def vpvr_center_vwap_log_decay(open_prices, close_prices, vol, length, bins, pct, decay, debug=False):
     """
     基于 log‐vol 的 δVPVR 中心 VWAP 计算
     对应 Pine f_delta_vpvr_vwap_center

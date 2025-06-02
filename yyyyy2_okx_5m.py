@@ -25,8 +25,9 @@ lock = threading.Lock()
 import logging
 import traceback# traceback.print_exc()
 from collections import deque
-from db_client import SQLiteWALClient
 
+from db_client import SQLiteWALClient
+from strategy import MultiFramePOCStrategy, EntryRule, EntryTier
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -37,6 +38,10 @@ ABSPATH=os.path.dirname(ABSPATH)+"/"
 flag='0'
 
 from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, calc_atr
+
+
+
+DEBUG = True
 import support_resistance
 
 def get_martingale_coefficient(counter, base=1.06, delta=0.05):
@@ -62,8 +67,6 @@ class trade_coin(object):
         self.asset_record = deque(maxlen=1440)
         self.asset_normal = 1
         self.usdt_total = None
-        self.save_pic_interval = 2
-        self.save_pic_counter = 0
 
         self.COLUMNS = ["trade_time", "side", "price", "size", "value", "record_time"]
 
@@ -73,7 +76,50 @@ class trade_coin(object):
         DB_PATH = f'{symbol}.db'
         self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv")
 
+        long_rule = EntryRule([
+            EntryTier(
+                name="conservative",
+                price_attr="SFrame_vwap_down_sl",
+                compare=lambda c, t: c < t,
+                amount=2,
+                consec_attr="SFrame_vwap_down_poc",
+                consec_compare="below",
+                consec_count=10
+            ),
+            EntryTier(
+                name="aggressive",
+                price_attr="HFrame_vwap_down_getin",
+                compare=lambda c, t: c < t,
+                amount=1,
+                consec_attr="HFrame_vwap_down_poc",
+                consec_compare="below",
+                consec_count=7
+            ),
+        ])
 
+        short_rule = EntryRule([
+            EntryTier(
+                name="conservative",
+                price_attr="SFrame_vwap_up_sl",
+                compare=lambda c, t: c > t,
+                amount=2,
+                consec_attr="SFrame_vwap_up_poc",
+                consec_compare="above",
+                consec_count=10
+            ),
+            EntryTier(
+                name="aggressive",
+                price_attr="HFrame_vwap_up_getin",
+                compare=lambda c, t: c > t,
+                amount=1,
+                consec_attr="HFrame_vwap_up_poc",
+                consec_compare="above",
+                consec_count=7
+            ),
+        ])
+
+        self.strategy = MultiFramePOCStrategy(long_rule, short_rule, support_resistance)
+        
         if 'ETH' in self.symbol:
             self.asset_coe=100
         else:
@@ -125,25 +171,25 @@ class trade_coin(object):
             self.coin_date=self.get_kline()
             # 读取买入多头 CSV
             with lock:
-                csv_long = os.path.join(root, f"buy_total_long_{self.symbol}_{self.user}.csv")
+                csv_long = os.path.join(root, f"record_buy_total_long_{self.symbol}_{self.user}.csv")
                 try:
-                    buy_total_long = pd.read_csv(csv_long)
+                    record_buy_total_long = pd.read_csv(csv_long)
                 except FileNotFoundError:
                     # 文件不存在时初始化空表
-                    buy_total_long = pd.DataFrame(columns=self.COLUMNS)
+                    record_buy_total_long = pd.DataFrame(columns=self.COLUMNS)
                 except Exception as e:
                     print(f"Error reading {csv_long}:", e)
-                    buy_total_long = pd.DataFrame(columns=self.COLUMNS)
+                    record_buy_total_long = pd.DataFrame(columns=self.COLUMNS)
             # 读取买入空头 CSV
             with lock:
-                csv_short = os.path.join(root, f"buy_total_short_{self.symbol}_{self.user}.csv")
+                csv_short = os.path.join(root, f"record_buy_total_short_{self.symbol}_{self.user}.csv")
                 try:
-                    buy_total_short = pd.read_csv(csv_short)
+                    record_buy_total_short = pd.read_csv(csv_short)
                 except FileNotFoundError:
-                    buy_total_short = pd.DataFrame(columns=self.COLUMNS)
+                    record_buy_total_short = pd.DataFrame(columns=self.COLUMNS)
                 except Exception as e:
                     print(f"Error reading {csv_short}:", e)
-                    buy_total_short = pd.DataFrame(columns=self.COLUMNS)
+                    record_buy_total_short = pd.DataFrame(columns=self.COLUMNS)
             '''
             索引	含义	说明
             0	时间（Timestamp）	日期时间，格式 "YYYY-MM-DD HH:MM:SS"
@@ -157,7 +203,7 @@ class trade_coin(object):
             window_tau_h = window_tau_l * 10
             window_tau_s = window_tau_h * 4
             multFramevp_poc = MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
-            multFramevp_poc.calculate_SFrame_vp_poc_and_std(self.coin_date)
+            multFramevp_poc.calculate_SFrame_vp_poc_and_std(self.coin_date, DEBUG)
 
             #debug ploting content
             # plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, False)
@@ -165,105 +211,50 @@ class trade_coin(object):
                 '''开平仓信号计算'''
                 print ("\t 开仓信号计算 开始 %s" %time.ctime())
                 close = self.coin_date.iloc[:,4] 
-                hh2 = self.coin_date.iloc[:,2] 
-                ll2 = self.coin_date.iloc[:,3] 
-                open2 = self.coin_date.iloc[:,1] 
-                vol = self.coin_date.iloc[:,5]
+                # hh2 = self.coin_date.iloc[:,2] 
+                # ll2 = self.coin_date.iloc[:,3] 
+                # open2 = self.coin_date.iloc[:,1] 
+                # vol = self.coin_date.iloc[:,5]
                 
                 cur_close = close.iloc[-1]
 
-                multiFrame_vp_poc_short = 0
-                multiFrame_vp_poc_long = 0
+                # 在每根 bar 收盘后调用：
+                
+                for side in ("long", "short"):
+                    # 1) 检查超时撤单
+                    if self.strategy.should_cancel(side):
+                        self.cancel_order(side)  
 
-                SFrame_vwap_up_getout = multFramevp_poc.SFrame_vwap_up_getout.iloc[-1]
-                SFrame_vwap_down_getout = multFramevp_poc.SFrame_vwap_down_getout.iloc[-1]
-                SFrame_vwap_up_getin = multFramevp_poc.SFrame_vwap_up_getin.iloc[-1]
-                SFrame_vwap_down_getin = multFramevp_poc.SFrame_vwap_down_getin.iloc[-1]
+                # 2) 评估新信号并下单
+                sig_long  = self.strategy.evaluate("long",  cur_close, close, multFramevp_poc, record_buy_total_long)
+                sig_short = self.strategy.evaluate("short", cur_close, close, multFramevp_poc, record_buy_total_short)
 
                 SFrame_vwap_up_poc = multFramevp_poc.SFrame_vwap_up_poc.iloc[-1]
                 SFrame_vwap_down_poc = multFramevp_poc.SFrame_vwap_down_poc.iloc[-1]
-                SFrame_vwap_down_sl = multFramevp_poc.SFrame_vwap_down_sl.iloc[-1]
-                SFrame_vwap_up_sl = multFramevp_poc.SFrame_vwap_up_sl.iloc[-1]
-
-                HFrame_vwap_down_getin = multFramevp_poc.HFrame_vwap_down_getin.iloc[-1]
-                HFrame_vwap_up_getin = multFramevp_poc.HFrame_vwap_up_getin.iloc[-1]
-                HFrame_vwap_up_poc = multFramevp_poc.HFrame_vwap_up_poc.iloc[-1]
-                HFrame_vwap_down_poc = multFramevp_poc.HFrame_vwap_down_poc.iloc[-1]
                 HFrame_vwap_down_sl = multFramevp_poc.HFrame_vwap_down_sl.iloc[-1]
                 HFrame_vwap_up_sl = multFramevp_poc.HFrame_vwap_up_sl.iloc[-1]
 
-                cur_high = hh2.iloc[-1]
-                is_short_un_opend = len(buy_total_short) == 0
-                if is_short_un_opend:
-                    conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_poc, 10)
-                    #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
-                    close_above_getin = cur_close > SFrame_vwap_up_getin 
-                    if  ( conecutive_above_s and close_above_getin) or (cur_close >= SFrame_vwap_up_sl and cur_close >= HFrame_vwap_up_sl): 
-                        multiFrame_vp_poc_short=1
-                        self.short_order_record_time = time.time()
+                if sig_long != None or sig_short != None:
+                    print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, sig_long=={sig_long\
+                            }, self.upl_short_open=={self.upl_short_open==1}, sig_short=={sig_short}, ',
+                        '--3'*15)
 
-                        print("open", "-"*100)
-                else:  #加仓条件
-                    betterThanPreLong = float(buy_total_short['price'].iloc[-1]) < cur_close  #更高的价格才加空仓
-                    time_cond =  time.time() - float(buy_total_short['record_time'].iloc[-1]) > 20*len(buy_total_short)
-                    conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_poc, 7 )
-                    close_above_getin = (cur_close > SFrame_vwap_up_getin)
-                    if ( conecutive_above_s and close_above_getin)\
-                            and time_cond and betterThanPreLong:
-                        multiFrame_vp_poc_short=1
-
-                        self.short_order_record_time = time.time()
-                        print("append open","-"*100)
-                
-                is_long_un_opend = len(buy_total_long) == 0
-                if is_long_un_opend:
-                    consecutive_break_resistance_l = support_resistance.consecutive_below_support(close, multFramevp_poc.SFrame_vwap_down_poc, 10)
-                    #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
-                    close_below_getin =  SFrame_vwap_down_getin > cur_close
-                    if (consecutive_break_resistance_l and close_below_getin) or (SFrame_vwap_down_sl >= cur_close and HFrame_vwap_down_sl >= cur_close):  
-                        
-                        multiFrame_vp_poc_long=1
-                        self.long_order_record_time = time.time()
-
-                        print("open", "+"*100)
-                else:  #加仓条件
-                    betterThanPreShort = float(buy_total_long['price'].iloc[-1])  > cur_close  #更低的价格才加多仓
-                    time_cond = time.time()-float(buy_total_long['record_time'].iloc[-1]) > 20*len(buy_total_long)
-                    consecutive_break_resistance_l = support_resistance.consecutive_below_support(close, multFramevp_poc.SFrame_vwap_down_poc, 7)
-                    close_below_getin = SFrame_vwap_down_getin > cur_close
-                    if (consecutive_break_resistance_l and close_below_getin) \
-                        and time_cond and betterThanPreShort:
-
-                        multiFrame_vp_poc_long=1
-                        self.long_order_record_time = time.time()
-                        print("append open", "+"*100)
-
-                if multiFrame_vp_poc_short != 1 and (self.short_order_record_time != None and time.time() - self.short_order_record_time > 20)\
-                    and multiFrame_vp_poc_long != 1 and (self.long_order_record_time != None and time.time() - self.long_order_record_time > 20):
-                    self.cancel_order()
-                    self.long_order_record_time = None
-                    self.short_order_record_time = None
-
-                print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, multiFrame_vp_poc_long=={multiFrame_vp_poc_long\
-                        }, self.upl_short_open=={self.upl_short_open==1}, multiFrame_vp_poc_short=={multiFrame_vp_poc_short}, ',
-                      '--3'*15)
-
-                if self.asset_normal==1 and self.upl_short_open==1 and multiFrame_vp_poc_short==1 :
+                if self.asset_normal==1 and self.upl_short_open==1 and sig_short != None and sig_short.action:
                     #开空
                     try:  
-                        if 0 :
+                        if 1 :
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
-                            price0=HFrame_vwap_down_getin #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price0=sig_short.price #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
                             price = price0*(1-0.0001) 
                             fv=self.fv[self.symbol]
-                            amount=max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) * get_martingale_coefficient(len(buy_total_short))
+                            amount=sig_short.amount  #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_short))
                             
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model) 
                             print(place_order,symbol,model)
                             try:
-                                logging.info((self.user,symbol,'LFrame_vp_poc',LFrame_vp_pocs.iloc[-1],'price0',price0,time11,model))
+                                logging.info((self.user,symbol,'sig_short.price',sig_short.price,'price0',price0,time11,model))
                             except:
                                 pass
                             # 下单返回
@@ -276,53 +267,51 @@ class trade_coin(object):
                             fill_sz   = float(order_info["fillSz"])
                             if is_filled:
                                 self.pre_short_fillPx = fill_px
+                                # 计算成交额
+                                value = fill_px * fill_sz * fv
 
-                            # 计算成交额
-                            value = fill_px * fill_sz * fv
+                                # 1. 先构造一个只有一行的新 DataFrame
+                                new_row = pd.DataFrame([{
+                                    "trade_time":  time11,
+                                    "side":        "short",
+                                    "price":       fill_px,
+                                    "size":        fill_sz,
+                                    "value":       value,
+                                    "record_time": time.time()
+                                }])
+                                # 2. 和原表 concat，ignore_index=True 意味着重置索引，避免手动算 len()
+                                record_buy_total_short = pd.concat([record_buy_total_short, new_row], ignore_index=True)
+                                # 3. 日志打印
+                                print("record_buy_total_short:\n", record_buy_total_short)
+                                print("orderid2", order_id, "orderinfo2", order_info,
+                                    "fillPx", fill_px, "fillSz", fill_sz)
+                                # 4. 保存到 CSV（覆盖写入，包含表头）
+                                csv_path = os.path.join(
+                                    root,
+                                    f"record_buy_total_short_{self.symbol}_{self.user}.csv"
+                                )
+                                record_buy_total_short.to_csv(csv_path, index=False)
 
-                            # 1. 先构造一个只有一行的新 DataFrame
-                            new_row = pd.DataFrame([{
-                                "trade_time":  time11,
-                                "side":        "short",
-                                "price":       fill_px,
-                                "size":        fill_sz,
-                                "value":       value,
-                                "record_time": time.time()
-                            }])
-                            # 2. 和原表 concat，ignore_index=True 意味着重置索引，避免手动算 len()
-                            buy_total_short = pd.concat([buy_total_short, new_row], ignore_index=True)
-                            # 3. 日志打印
-                            print("buy_total_short:\n", buy_total_short)
-                            print("orderid2", order_id, "orderinfo2", order_info,
-                                "fillPx", fill_px, "fillSz", fill_sz)
-                            # 4. 保存到 CSV（覆盖写入，包含表头）
-                            csv_path = os.path.join(
-                                root,
-                                f"buy_total_short_{self.symbol}_{self.user}.csv"
-                            )
-                            buy_total_short.to_csv(csv_path, index=False)
-
-
-                            plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, True)
+                                plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, True)
                     except Exception as e:
                           print('buyshort erro1',e)
                     self.upl_open_condition()
 
                 
-                if self.asset_normal==1 and self.upl_long_open==1 and multiFrame_vp_poc_long==1:
+                if self.asset_normal==1 and self.upl_long_open==1 and sig_long != None and sig_long.action:
                     #开多
                     try:  
                         if 1:
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
-                            price0=HFrame_vwap_down_getin #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price0=sig_long.price #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
                             price=price0*(1+0.0001)
                             fv=self.fv[self.symbol]
-                            amount=max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) * get_martingale_coefficient(len(buy_total_long))
+                            amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model)
                             try:
-                                logging.info((self.user,symbol,'LFrame_vp_poc',LFrame_vp_pocs.iloc[-1],'price0',price0,time11,model))
+                                logging.info((self.user,symbol,'sig_long.price',sig_long.price,'price0',price0,time11,model))
                             except:
                                 pass
                             print('place_order:', place_order,symbol,model)
@@ -330,44 +319,45 @@ class trade_coin(object):
                             order_id   = place_order["data"][0]["ordId"]
                             order_info = self.tradeAPI.get_orders(self.symbol, order_id)["data"][0]
                             is_filled  = order_info["state"]
-                            fill_px    = float(order_info["fillPx"])
-                            fill_sz    = float(order_info["fillSz"])
+                            
 
                             # 如果已成交，记录最新成交价
                             if is_filled:
+                                fill_px    = float(order_info["fillPx"])
+                                fill_sz    = float(order_info["fillSz"])
                                 self.pre_long_fillPx = fill_px
 
-                            # 计算成交总值
-                            value = fill_px * fill_sz * fv
+                                # 计算成交总值
+                                value = fill_px * fill_sz * fv
 
-                            # 1. 先构造一个只有一行的新 DataFrame
-                            new_row = pd.DataFrame([{
-                                "trade_time":  time11,
-                                "side":        "short",
-                                "price":       fill_px,
-                                "size":        fill_sz,
-                                "value":       value,
-                                "record_time": time.time()
-                            }])
-                            # 2. 和原表 concat，ignore_index=True 意味着重置索引，避免手动算 len()
-                            buy_total_long = pd.concat([buy_total_long, new_row], ignore_index=True)
-                            # 3. 日志打印
-                            print("buy_total_long:\n", buy_total_long)
-                            print("orderid2", order_id, "orderinfo2", order_info,
-                                "fillPx", fill_px, "fillSz", fill_sz)
-                            # 4. 保存到 CSV（覆盖写入，包含表头）
-                            csv_path = os.path.join(
-                                root,
-                                f"buy_total_long_{self.symbol}_{self.user}.csv"
-                            )
-                            buy_total_long.to_csv(csv_path, index=False)
+                                # 1. 先构造一个只有一行的新 DataFrame
+                                new_row = pd.DataFrame([{
+                                    "trade_time":  time11,
+                                    "side":        "short",
+                                    "price":       fill_px,
+                                    "size":        fill_sz,
+                                    "value":       value,
+                                    "record_time": time.time()
+                                }])
+                                # 2. 和原表 concat，ignore_index=True 意味着重置索引，避免手动算 len()
+                                record_buy_total_long = pd.concat([record_buy_total_long, new_row], ignore_index=True)
+                                # 3. 日志打印
+                                print("record_buy_total_long:\n", record_buy_total_long)
+                                print("orderid2", order_id, "orderinfo2", order_info,
+                                    "fillPx", fill_px, "fillSz", fill_sz)
+                                # 4. 保存到 CSV（覆盖写入，包含表头）
+                                csv_path = os.path.join(
+                                    root,
+                                    f"record_buy_total_long_{self.symbol}_{self.user}.csv"
+                                )
+                                record_buy_total_long.to_csv(csv_path, index=False)
 
-                            plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, True)
+                                plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, True)
                     except Exception as e:
                           print('buylong erro1',e) 
                     self.upl_open_condition()
                 #平仓
-                if len(buy_total_long)>=2 or len(buy_total_short)>=2 or time.time()-self.position_time>10:
+                if len(record_buy_total_long)>=2 or len(record_buy_total_short)>=2 or time.time()-self.position_time>10:
                     self.position_time=time.time()
                     self.usdt_total=self.get_usdt_total()
                     notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
@@ -408,26 +398,26 @@ class trade_coin(object):
                         tp_condition = (#short_profit >stop_profit or\
                                         (cur_close <= SFrame_vwap_down_poc and short_profit > fee_require_profit)) 
                         
-                        bewlow_both_sl = (cur_close <= SFrame_vwap_down_sl and cur_close <= HFrame_vwap_down_sl and short_profit > 0)  #最后一种，不论盈亏都应该平仓。
+                        bewlow_sl = (cur_close <= HFrame_vwap_down_sl and short_profit > 0)  #最后一种，不论盈亏都应该平仓。
                         consecutive_belowsl_condition = (multFramevp_poc.SFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).iloc[-3:].sum() >= 2  # 最近三根K线中有2根以上为True
 
                         close_amount = amount_short
-                        if bewlow_both_sl or consecutive_belowsl_condition:
+                        if bewlow_sl or consecutive_belowsl_condition:
                             close_amount = 1  #单次平仓（目的是减低风险而不是为了获利）
                         if tp_condition:
                             close_amount = amount_short
                         
-                        if tp_condition or consecutive_belowsl_condition or bewlow_both_sl:
+                        if tp_condition or consecutive_belowsl_condition or bewlow_sl:
                             model='sellshort'
                             # price0=cur_close
-                            price0 = close if tp_condition else SFrame_vwap_up_sl
+                            price0 = close if tp_condition else HFrame_vwap_down_sl
                             price=price0*(1-0.0001)
                             amount=max(close_amount, 1)
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model)
                             
                             print(place_order,symbol,model)
-                            csv_path = os.path.join(root, f"buy_total_short_{self.symbol}_{self.user}.csv")
+                            csv_path = os.path.join(root, f"record_buy_total_short_{self.symbol}_{self.user}.csv")
                             if os.path.exists(csv_path):
                                 os.remove(csv_path)
 
@@ -437,26 +427,26 @@ class trade_coin(object):
                         tp_condition = (#long_profit>stop_profit or 
                                         (cur_close >= SFrame_vwap_up_poc and long_profit > fee_require_profit))  
                         
-                        uppon_both_sl = (cur_close >= SFrame_vwap_up_sl and cur_close >= HFrame_vwap_up_sl and long_profit > 0)
+                        uppon_sl = (cur_close >= HFrame_vwap_up_sl and long_profit > 0)
                         # 最近三根K线中有2根以上为True
                         consecutive_upponsl_condition = (multFramevp_poc.SFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).iloc[-3:].sum() >= 2 
 
                         close_amount = amount_long
-                        if uppon_both_sl or consecutive_upponsl_condition:
+                        if consecutive_upponsl_condition:
                             close_amount = 1  #单次平仓（目的是减低风险而不是为了获利）
                         if tp_condition:
                             close_amount = amount_long
 
-                        if tp_condition or consecutive_upponsl_condition or uppon_both_sl:
+                        if tp_condition or consecutive_upponsl_condition or uppon_sl:
                             model='selllong'
-                            price0=close if tp_condition else SFrame_vwap_down_sl
+                            price0=close if tp_condition else HFrame_vwap_down_sl
                             price=price0*(1.00 - 0.0001)
                             amount=max(close_amount, 1)
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model)
                             
                             print(place_order,symbol,model)
-                            csv_path = os.path.join(root, f"buy_total_long_{self.symbol}_{self.user}.csv")
+                            csv_path = os.path.join(root, f"record_buy_total_long_{self.symbol}_{self.user}.csv")
                             if os.path.exists(csv_path):
                                 os.remove(csv_path)
 
@@ -472,7 +462,7 @@ class trade_coin(object):
                                 amount=amount_short
                                 print('--1',symbol,model)
                                 place_order=self.create_order1(symbol,price,amount,model)
-                                csv_path = os.path.join(root, f"buy_total_short_{self.symbol}_{self.user}.csv")
+                                csv_path = os.path.join(root, f"record_buy_total_short_{self.symbol}_{self.user}.csv")
                                 if os.path.exists(csv_path):
                                     os.remove(csv_path)
                                 
@@ -490,7 +480,7 @@ class trade_coin(object):
                                 print('--1',symbol,model)
                                 place_order=self.create_order1(symbol,price,amount,model)
                                 print(place_order,symbol,model)
-                                csv_path = os.path.join(root, f"buy_total_long_{self.symbol}_{self.user}.csv")
+                                csv_path = os.path.join(root, f"record_buy_total_long_{self.symbol}_{self.user}.csv")
                                 if os.path.exists(csv_path):
                                     os.remove(csv_path)
                                 
@@ -501,16 +491,10 @@ class trade_coin(object):
                               logging.info(('多单止损e',symbol,e))
                               print('selllong erro1',e)
                 
-                # if self.save_pic_counter % self.save_pic_interval == 0:
-                #     plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, False)
                 # #     # from vpvr_gmm_splited import VPVRAnalyzer
                 # #     # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
                 # #     # result = analyzer.run(self.symbol)
                 # #     # print(result['regions'])
-                    
-                #     if self.save_pic_counter >= 4294967296-1:  #2**32 - 1, avoid value overflow
-                #         self.save_pic_counter = 1
-                self.save_pic_counter += 1
         except Exception as e:
             time.sleep(0.2)
             traceback.print_exc()
@@ -603,7 +587,7 @@ class trade_coin(object):
                     "price": px
                 }
                 # 清空本地记录文件
-                csv_path = os.path.join(root, f"buy_total_short_{self.symbol}_{self.user}.csv")
+                csv_path = os.path.join(root, f"record_buy_total_short_{self.symbol}_{self.user}.csv")
                 if os.path.exists(csv_path):
                     os.remove(csv_path)
                 # 取消残留挂单
@@ -626,7 +610,7 @@ class trade_coin(object):
                     "filled_amount": amount_long,
                     "price": px
                 }
-                csv_path = os.path.join(root, f"buy_total_long_{self.symbol}_{self.user}.csv")
+                csv_path = os.path.join(root, f"record_buy_total_long_{self.symbol}_{self.user}.csv")
                 if os.path.exists(csv_path):
                     os.remove(csv_path)
                 self.long_append_counter = 1
@@ -714,7 +698,7 @@ class trade_coin(object):
                 continue
          return totalEq 
    
-    def cancel_order(self):
+    def cancel_order(self, side = None): #side保留为后续设计，long或者short
         try:
             lock.acquire()
             unfill=self.tradeAPI.get_order_list(instId='')['data']
@@ -730,6 +714,9 @@ class trade_coin(object):
                 if instid == self.symbol:
                     orderid=unfill[i]['ordId']
                     self.tradeAPI.cancel_order(instid, orderid)
+
+        self.strategy.clear_order('long')
+        self.strategy.clear_order('short')
 
     def  get_entryprice_okx(self,symbol='BTCUSDT'):
          a11 = 1

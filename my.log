@@ -2946,3 +2946,19 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 
 2025-06-02 18:55:11,472 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-02 21:04:04,525 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 21:33:03,688 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 22:24:26,692 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 22:24:52,588 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 22:25:16,769 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 22:33:56,541 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 23:26:00,791 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 23:51:08,454 - INFO - Dash is running on http://127.0.0.1:8050/
+

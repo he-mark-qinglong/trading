@@ -37,7 +37,6 @@ app.layout = html.Div([
 # 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
 colors = {
     'LFrame_vp_poc_series':     'yellow',
-    # 'LFrame_ohlc5_series':     'green',
     'SFrame_vp_poc':            'purple',
 
     'SFrame_vwap_up_poc':          'red',
@@ -90,7 +89,10 @@ def update_graph(n):
 
         # 4. 计算所有 vp_poc / VWAP / STD 系列
         before_cal = time.time()
-        multiVwap = LHFrameStd.MultiTFvp_poc(0.04, 24, 240, 960)
+        window_tau_l = int(12) 
+        window_tau_h = window_tau_l * 10
+        window_tau_s = window_tau_h * 4
+        multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
         multiVwap.calculate_SFrame_vp_poc_and_std(df)
         after_calc = time.time()
         print(f'time consumed:{after_calc - before_cal}')
