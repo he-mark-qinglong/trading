@@ -2944,3 +2944,5 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 
 2025-06-02 18:21:11,955 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-02 18:55:11,472 - INFO - Dash is running on http://127.0.0.1:8050/
+

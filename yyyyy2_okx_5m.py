@@ -158,9 +158,9 @@ class trade_coin(object):
             window_tau_s = window_tau_h * 4
             multFramevp_poc = MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
             multFramevp_poc.calculate_SFrame_vp_poc_and_std(self.coin_date)
-            
-            LFrame_vp_pocs = multFramevp_poc.LFrame_vp_poc_series
 
+            #debug ploting content
+            # plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, False)
             if 1:
                 '''开平仓信号计算'''
                 print ("\t 开仓信号计算 开始 %s" %time.ctime())
@@ -566,7 +566,7 @@ class trade_coin(object):
         # 1. 从 SQLite 读最新 2000 条
         try:
             # 先拿最新 2000 条（倒序）
-            df = self.client.read_df(limit=1200, order_by="ts DESC")
+            df = self.client.read_df(limit=1600, order_by="ts DESC")
             self.coin_data = df.sort_values("ts", ascending=True)
         except Exception as e:
             print(f"读取数据库错误：{e}", '&&&'*10)

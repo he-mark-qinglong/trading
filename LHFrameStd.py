@@ -222,83 +222,166 @@ import matplotlib
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
 
-def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading= False, save_to_file=True):
-    fig, ax = plt.subplots(figsize=(15, 8))
+
+def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading=False, save_to_file=True):
+    import matplotlib.dates as mdates
+    from datetime import datetime
+
+    fig, (ax_k, ax_vol) = plt.subplots(2, 1, figsize=(15, 8), sharex=True,
+                                       gridspec_kw={'height_ratios': [7, 3]},
+                                       constrained_layout=True)
     fig.patch.set_facecolor('black')
+    ax_k.set_facecolor('black')
+    ax_vol.set_facecolor('black')
 
-    # 颜色定义
+    # 颜色与变量名列表——和 Dash 一致
     colors = {
-        'LFrame_vp_poc_series': 'yellow',
-        'LFrame_ohlc5_series': 'green',
-        'SFrame_vp_poc': 'purple',
-        'SFrame_vwap_up': 'red',
-        'SFrame_vwap_up_getin': 'orange',
-        'SFrame_vwap_up_getout': 'chocolate',
-        'SFrame_vwap_down': 'blue',
-        'SFrame_vwap_down_getin': 'deepskyblue',
-        'SFrame_vwap_down_getout': 'cyan',
-
-        'SFrame_vwap_up_sl': 'red',
-        'SFrame_vwap_down_sl': 'green',
+        'LFrame_vp_poc_series':     'yellow',
+        'SFrame_vp_poc':            'purple',
+        'SFrame_vwap_up_poc':       'red',
+        'SFrame_vwap_up_sl':        'firebrick',
+        'SFrame_vwap_down_poc':     'blue',
+        'SFrame_vwap_down_sl':      'seagreen',
+        'HFrame_vwap_up_getin':     'deeppink',
+        'HFrame_vwap_up_sl':        'orangered',
+        'HFrame_vwap_down_getin':   'turquoise',
+        'HFrame_vwap_down_sl':      'darkslategray',
     }
+    vars_to_plot = list(colors.keys())
 
-    # 依次绘制所有线
-    vars_to_plot = [
-        'LFrame_ohlc5_series',
-        'LFrame_vp_poc_series',
-        'SFrame_vp_poc',
-        'SFrame_vwap_up',
-        'SFrame_vwap_up_getin',
-        'SFrame_vwap_up_getout',
-        'SFrame_vwap_down',
-        'SFrame_vwap_down_getin',
-        'SFrame_vwap_down_getout',
-        'SFrame_vwap_up_sl',
-        'SFrame_vwap_down_sl',
-    ]
+    # === 参考DASH裁剪法：找SFrame_vwap_up_poc第一个有效点 ===
+    base_var = 'SFrame_vwap_up_poc'
+    base_series = getattr(multFramevp_poc, base_var, None)
+    start = None
+    if isinstance(base_series, (pd.Series, np.ndarray)) and hasattr(base_series, "first_valid_index"):
+        start = base_series.first_valid_index()
+
+    # 主 DataFrame
+    df = getattr(multFramevp_poc, 'df', None)
+    if start is not None:
+        # DataFrame裁剪
+        if isinstance(df, pd.DataFrame) and start in df.index:
+            df = df.loc[start:].copy()
+        # 所有序列统一loc[start:]，完全和Dash那段一样
+        for var in vars_to_plot + ["HFrame_vwap_up_getin", "HFrame_vwap_up_sl", "HFrame_vwap_down_sl", "HFrame_vwap_down_getin"]:
+            s = getattr(multFramevp_poc, var, None)
+            if isinstance(s, pd.Series) and start in s.index:
+                setattr(multFramevp_poc, var, s.loc[start:])
+
+    # X轴时间
+    datetime_index = None
+    if df is not None and 'datetime' in df.columns:
+        datetime_index = df['datetime']
+    else:
+        for var in vars_to_plot:
+            s = getattr(multFramevp_poc, var, None)
+            if isinstance(s, pd.Series):
+                datetime_index = s.index
+                break
+
+    # ---主K线/close---
+    if df is not None and set(['open', 'high', 'low', 'close']).issubset(df.columns):
+        o,h,l,c = df['open'].values, df['high'].values, df['low'].values, df['close'].values
+        times = datetime_index if datetime_index is not None else df.index
+        try:
+            from mplfinance.original_flavor import candlestick_ohlc
+            quotes = np.column_stack([mdates.date2num(times), o,h,l,c])
+            candlestick_ohlc(ax_k, quotes, width=0.0015, colorup='lime', colordown='red', alpha=0.7)
+        except ImportError:
+            ax_k.plot(times, c, color='white', label='Close', linewidth=1)
+
+    elif datetime_index is not None:
+        for var in ['LFrame_ohlc5_series', 'close']:
+            cval = getattr(multFramevp_poc, var, None)
+            if isinstance(cval, pd.Series):
+                ax_k.plot(cval.index, cval.values, color='lightgray', linewidth=1, label=var)
+                break
+
+    # ---所有系列线---
     for var in vars_to_plot:
-        val = getattr(multFramevp_poc, var, None)
-        if val is not None and hasattr(val, 'index') and hasattr(val, 'values'):
-            ax.plot(val.index, val.values, label=var, color=colors.get(var, 'black'), linewidth=2 if 'vwap' not in var else 1.5, linestyle='-' if 'getin' not in var and 'getout' not in var else '--')
+        series = getattr(multFramevp_poc, var, None)
+        if not isinstance(series, pd.Series) or series.isna().all():
+            continue
+        ax_k.plot(series.index, series.values,
+                  label=var, color=colors.get(var, 'white'),
+                  linewidth=2 if 'HFrame' not in var else 1,
+                  linestyle='-' if '_poc' in var else 'dotted')
 
-    # 设置y轴自适应
-    all_y_values = []
-    for var in vars_to_plot:
-        val = getattr(multFramevp_poc, var, None)
-        if val is not None and hasattr(val, 'values'):
-            all_y_values.extend(val.values)
-    if all_y_values:
-        ymin = min(all_y_values) * 0.99
-        ymax = max(all_y_values) * 1.01
-        ax.set_ylim(ymin, ymax)
+    # -------- 色带填充（严格和Dash同步！！）--------
+    # HFrame上轨
+    h_getin = getattr(multFramevp_poc, "HFrame_vwap_up_getin", None)
+    h_sl    = getattr(multFramevp_poc, "HFrame_vwap_up_sl", None)
+    if isinstance(h_getin, pd.Series) and isinstance(h_sl, pd.Series):
+        ax_k.fill_between(h_getin.index, h_getin.values, h_sl.values,
+                          color="hotpink", alpha=0.20, label="HFrame_up_band")
 
-    ax.set_title(f"Combined vp_poc and VWAP Derived Lines - {symbol}")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Price/Value")
-    ax.legend(loc='upper left', fontsize='small')
-    ax.grid(True)
-    fig.autofmt_xdate()
-    plt.tight_layout()
+    # HFrame下轨
+    h_down_sl = getattr(multFramevp_poc, "HFrame_vwap_down_sl", None)
+    h_down_getin = getattr(multFramevp_poc, "HFrame_vwap_down_getin", None)
+    if isinstance(h_down_sl, pd.Series) and isinstance(h_down_getin, pd.Series):
+        ax_k.fill_between(h_down_sl.index, h_down_sl.values, h_down_getin.values,
+                          color="deepskyblue", alpha=0.20, label="HFrame_down_band")
+
+    # 成交量柱状图
+    if df is not None and 'vol' in df.columns:
+        times = datetime_index if datetime_index is not None else df.index
+        ax_vol.bar(times, df['vol'].values, width=0.003, color='dodgerblue', alpha=0.6, label='Volume')
+
+    # y轴自适应
+    try:
+        all_y = []
+        for var in vars_to_plot:
+            series = getattr(multFramevp_poc, var, None)
+            if isinstance(series, pd.Series):
+                all_y.extend(series.dropna().values)
+        if all_y:
+            ymin = min(all_y) * 0.99
+            ymax = max(all_y) * 1.01
+            ax_k.set_ylim(ymin, ymax)
+    except:
+        pass
+
+    ax_k.set_title(f"OKX 4s K-line + vp_poc/VWAP Derived Series - {symbol}", color='w')
+    ax_k.set_ylabel("Price/Value", color='w')
+    ax_vol.set_ylabel("Volume", color='w')
+    for spine in ax_k.spines.values():
+        spine.set_color('white')
+    for spine in ax_vol.spines.values():
+        spine.set_color('white')
+    ax_k.tick_params(axis='x', labelrotation=15, colors='white')
+    ax_k.tick_params(axis='y', colors='white')
+    ax_vol.tick_params(axis='x', labelrotation=15, colors='white')
+    ax_vol.tick_params(axis='y', colors='white')
+    ax_k.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=4,  # 可自行调节，一行排4~5个
+        fontsize="small",
+        facecolor="black",
+        labelcolor="white"
+    )
+
+    # ax_k.legend(loc='upper left', fontsize='small', facecolor='black', labelcolor='white')
+    ax_k.grid(True, alpha=0.2)
+    ax_vol.grid(True, alpha=0.15)
+    # X轴日期格式
+    if datetime_index is not None:
+        ax_vol.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+        fig.autofmt_xdate(rotation=10)
 
     if save_to_file:
         save_dir = "plots"
         os.makedirs(save_dir, exist_ok=True)
-
-        from datetime import datetime
-        # 年月日_时-分-秒 (更可读)
-        timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]  # 去掉后3位微秒
-        # 输出: 20250531_09-04-50_629
-
+        timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]
         prefix = f"{symbol}_" if symbol else ""
         if is_trading:
-            prefix = f"trade_{prefix}" 
+            prefix = f"trade_{prefix}"
         filename = os.path.join(save_dir, f"{prefix}multFramevp_poc_combined_plot_{timestamp}.png")
-        fig.savefig(filename)
+        fig.savefig(filename, facecolor=fig.get_facecolor())
         plt.close(fig)
         print(f"Plot saved to file: {filename}")
     else:
         return fig
-
 
 def calc_atr(df, period=14, high_col="high", low_col="low", close_col="close"):
     """
