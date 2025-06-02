@@ -7,7 +7,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import vwap_calc
 
-class MultiTFvpPOC:  
+class MultiTFvp_poc:  
     def __init__(self,  
                  lambd=0.03,  
                  window_LFrame=12,  
@@ -25,12 +25,12 @@ class MultiTFvpPOC:
         self.golden_split_factor = 1.618 
 
         # 预定义所有结果属性为None  
-        self.LFrame_vpPOC_series = None  
+        self.LFrame_vp_poc_series = None  
         self.LFrame_ohlc5_series = None  
        
 
-        self.SFrame_vpPOC = None  
-        self.HFrame_vpPOC = None  
+        self.SFrame_vp_poc = None  
+        self.HFrame_vp_poc = None  
         self.HFrame_price_std = None  
 
         self.SFrame_vwap_up = None
@@ -44,7 +44,7 @@ class MultiTFvpPOC:
         self.SFrame_vwap_down_sl = None
         self.SFrame_vwap_up_sl = None
     
-    # def calculate_SFrame_vpPOC_and_std(self, coin_date_df):  
+    # def calculate_SFrame_vp_poc_and_std(self, coin_date_df):  
     
     #     open = coin_date_df['open']
     #     high = coin_date_df['high']
@@ -52,9 +52,9 @@ class MultiTFvpPOC:
     #     close = coin_date_df['close']  
     #     vol = coin_date_df['vol']
 
-    #     self.LFrame_vpPOC_series = vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_LFrame, 40, 0.995, 0.99)
+    #     self.LFrame_vp_poc_series = vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_LFrame, 40, 0.995, 0.99)
          
-    #     self.SFrame_vpPOC =  vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_SFrame, 40, 0.995, 0.99)   
+    #     self.SFrame_vp_poc =  vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_SFrame, 40, 0.995, 0.99)   
 
     #     low_poc, high_poc = vwap_calc.vpvr_pct_band_vwap_log_decay(
     #                 open_prices=open,
@@ -64,7 +64,7 @@ class MultiTFvpPOC:
     #                 bins=40,
     #                 pct=0.07,
     #                 decay=0.995,
-    #                 vwap_series=self.SFrame_vpPOC   # vwap请提前自行计算、赋值
+    #                 vwap_series=self.SFrame_vp_poc   # vwap请提前自行计算、赋值
     #             )
     #     self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index) 
        
@@ -74,14 +74,14 @@ class MultiTFvpPOC:
     #     # ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
     #     # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
         
-    #     self.SFrame_vpPOC = ta.rma(self.SFrame_vpPOC, length=self.window_LFrame)
+    #     self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.window_LFrame)
 
-    #     # 假设 close, SFrame_vpPOC, ohlc5 为 pd.Series
-    #     delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+    #     # 假设 close, SFrame_vp_poc, ohlc5 为 pd.Series
+    #     delta_high = np.maximum(close - self.SFrame_vp_poc, 0)
     #     # 过去240根K线内的最大delta_high的绝对值
     #     max_delta_high = delta_high.rolling(240).max().abs()
 
-    #     delta_low = np.minimum(close - self.SFrame_vpPOC, 0)
+    #     delta_low = np.minimum(close - self.SFrame_vp_poc, 0)
     #     # 过去240根K线内的最小delta_low的绝对值
     #     min_delta_low = delta_low.rolling(240).min().abs()
 
@@ -102,7 +102,7 @@ class MultiTFvpPOC:
 
     #     self.SFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
     #     self.SFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
-    def calculate_SFrame_vpPOC_and_std(self, coin_date_df):
+    def calculate_SFrame_vp_poc_and_std(self, coin_date_df):
         open_  = coin_date_df['open']
         high   = coin_date_df['high']
         low    = coin_date_df['low']
@@ -138,7 +138,7 @@ class MultiTFvpPOC:
                 vol=vol,
                 length=self.window_SFrame,
                 bins=40,
-                pct=0.07,
+                pct=0.1,
                 decay=0.995,
                 vwap_series=sframe_vp
             )
@@ -149,35 +149,35 @@ class MultiTFvpPOC:
                 vol=vol,
                 length=self.window_HFrame,
                 bins=40,
-                pct=0.07,
+                pct=0.1,
                 decay=0.995,
                 vwap_series=hframe_vp
             )
 
             # 取回结果
-            self.LFrame_vpPOC_series = future_L.result()
-            self.SFrame_vpPOC       = sframe_vp
-            self.HFrame_vpPOC       = hframe_vp
+            self.LFrame_vp_poc_series = future_L.result()
+            self.SFrame_vp_poc       = sframe_vp
+            self.HFrame_vp_poc       = hframe_vp
             slow_poc, shigh_poc       = sfuture_band.result()
             hlow_poc, hhigh_poc       = hfuture_band.result()
 
         # 以下全为向量化运算
         self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
 
-        # 对 SFrame_vpPOC 做 RMA 平滑
-        self.SFrame_vpPOC = ta.rma(self.SFrame_vpPOC, length=self.window_LFrame)
+        # 对 SFrame_vp_poc 做 RMA 平滑
+        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.window_LFrame)
 
         # 计算 HFrame 的最大摆幅
-        delta_high = np.maximum(close - self.HFrame_vpPOC, 0)
+        delta_high = np.maximum(close - self.HFrame_vp_poc, 0)
         max_delta_high = delta_high.rolling(240).max().abs()
-        delta_low  = np.minimum(close - self.HFrame_vpPOC, 0)
+        delta_low  = np.minimum(close - self.HFrame_vp_poc, 0)
         min_delta_low = delta_low.rolling(240).min().abs()
         HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
         
         # 计算 SFrame 的最大摆幅
-        delta_high = np.maximum(close - self.SFrame_vpPOC, 0)
+        delta_high = np.maximum(close - self.SFrame_vp_poc, 0)
         max_delta_high = delta_high.rolling(240).max().abs()
-        delta_low  = np.minimum(close - self.SFrame_vpPOC, 0)
+        delta_low  = np.minimum(close - self.SFrame_vp_poc, 0)
         min_delta_low = delta_low.rolling(240).min().abs()
         SFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
 
@@ -186,36 +186,34 @@ class MultiTFvpPOC:
         self.SFrame_price_std = (
             close.rolling(self.window_HFrame).std() * 0.9
             + SFrame_max_swing * 0.1
-        )
+        ) * self.golden_split_factor
         self.SFrame_price_std.index = coin_date_df.index
         
         # 2. SFrame 上下边界及进出场线（用 ta.rma）
-        self.SFrame_vwap_up        = ta.rma(shigh_poc, length=self.window_LFrame)
+        self.SFrame_vwap_up_poc        = ta.rma(shigh_poc, length=self.window_LFrame)
         self.SFrame_vwap_up_getin  = ta.rma(shigh_poc + self.SFrame_price_std, length=self.window_LFrame)
         self.SFrame_vwap_up_getout = ta.rma(shigh_poc - self.SFrame_price_std, length=self.window_LFrame)
         self.SFrame_vwap_up_sl     = ta.rma(shigh_poc + 2 * self.SFrame_price_std, length=self.window_LFrame)
 
-        self.SFrame_vwap_down        = ta.rma(slow_poc, length=self.window_LFrame)
+        self.SFrame_vwap_down_poc        = ta.rma(slow_poc, length=self.window_LFrame)
         self.SFrame_vwap_down_getin  = ta.rma(slow_poc - self.SFrame_price_std, length=self.window_LFrame)
         self.SFrame_vwap_down_getout = ta.rma(slow_poc + self.SFrame_price_std, length=self.window_LFrame)
         self.SFrame_vwap_down_sl     = ta.rma(slow_poc - 2 * self.SFrame_price_std, length=self.window_LFrame)
 
         # 3. 计算 HFrame 的价格标准差，并对齐索引
         h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
-        self.HFrame_price_std = h_std.reindex(coin_date_df.index)
+        self.HFrame_price_std = h_std.reindex(coin_date_df.index) * self.golden_split_factor
 
         # 4. HFrame 上下边界及进出场线（元素级取最大/最小）
         #    注意这里继续用 length=self.window_LFrame，若要用 HFrame 窗口可自行调整
         rma = lambda series: ta.rma(series, length=self.window_LFrame)
 
-        self.HFrame_vwap_up        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
+        self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
-        self.HFrame_vwap_up_getout = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc - self.HFrame_price_std))
         self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + 2 * self.HFrame_price_std))
 
-        self.HFrame_vwap_down        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
+        self.HFrame_vwap_down_poc        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
         self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - self.HFrame_price_std))
-        self.HFrame_vwap_down_getout = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc + self.HFrame_price_std))
         self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - 2 * self.HFrame_price_std))
         
 import os
@@ -224,15 +222,15 @@ import matplotlib
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
 
-def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save_to_file=True):
+def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading= False, save_to_file=True):
     fig, ax = plt.subplots(figsize=(15, 8))
     fig.patch.set_facecolor('black')
 
     # 颜色定义
     colors = {
-        'LFrame_vpPOC_series': 'yellow',
+        'LFrame_vp_poc_series': 'yellow',
         'LFrame_ohlc5_series': 'green',
-        'SFrame_vpPOC': 'purple',
+        'SFrame_vp_poc': 'purple',
         'SFrame_vwap_up': 'red',
         'SFrame_vwap_up_getin': 'orange',
         'SFrame_vwap_up_getout': 'chocolate',
@@ -247,8 +245,8 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
     # 依次绘制所有线
     vars_to_plot = [
         'LFrame_ohlc5_series',
-        'LFrame_vpPOC_series',
-        'SFrame_vpPOC',
+        'LFrame_vp_poc_series',
+        'SFrame_vp_poc',
         'SFrame_vwap_up',
         'SFrame_vwap_up_getin',
         'SFrame_vwap_up_getout',
@@ -259,14 +257,14 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
         'SFrame_vwap_down_sl',
     ]
     for var in vars_to_plot:
-        val = getattr(multFramevpPOC, var, None)
+        val = getattr(multFramevp_poc, var, None)
         if val is not None and hasattr(val, 'index') and hasattr(val, 'values'):
             ax.plot(val.index, val.values, label=var, color=colors.get(var, 'black'), linewidth=2 if 'vwap' not in var else 1.5, linestyle='-' if 'getin' not in var and 'getout' not in var else '--')
 
     # 设置y轴自适应
     all_y_values = []
     for var in vars_to_plot:
-        val = getattr(multFramevpPOC, var, None)
+        val = getattr(multFramevp_poc, var, None)
         if val is not None and hasattr(val, 'values'):
             all_y_values.extend(val.values)
     if all_y_values:
@@ -274,7 +272,7 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
         ymax = max(all_y_values) * 1.01
         ax.set_ylim(ymin, ymax)
 
-    ax.set_title(f"Combined vpPOC and VWAP Derived Lines - {symbol}")
+    ax.set_title(f"Combined vp_poc and VWAP Derived Lines - {symbol}")
     ax.set_xlabel("Time")
     ax.set_ylabel("Price/Value")
     ax.legend(loc='upper left', fontsize='small')
@@ -294,7 +292,7 @@ def plot_all_multiftfpoc_vars(multFramevpPOC, symbol='', is_trading= False, save
         prefix = f"{symbol}_" if symbol else ""
         if is_trading:
             prefix = f"trade_{prefix}" 
-        filename = os.path.join(save_dir, f"{prefix}multFramevpPOC_combined_plot_{timestamp}.png")
+        filename = os.path.join(save_dir, f"{prefix}multFramevp_poc_combined_plot_{timestamp}.png")
         fig.savefig(filename)
         plt.close(fig)
         print(f"Plot saved to file: {filename}")

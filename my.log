@@ -2869,3 +2869,33 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 2025-06-01 17:12:46,254 - INFO - Dash is running on http://127.0.0.1:8050/
 
 2025-06-01 17:31:29,699 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2491.496966742607, 'price0', 2486.29, datetime.datetime(2025, 6, 1, 17, 31, 17, 437298), 'buylong')
+2025-06-01 17:47:50,081 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2481.5466621154237, 'price0', 2478.53, datetime.datetime(2025, 6, 1, 17, 47, 38, 597766), 'buylong')
+2025-06-01 18:00:05,735 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 19:18:36,164 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2496.3817650667143, 'price0', 2497.83, datetime.datetime(2025, 6, 1, 19, 18, 24, 128608), 'buyshort')
+2025-06-01 19:20:19,957 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2498.230021414629, 'price0', 2499.19, datetime.datetime(2025, 6, 1, 19, 20, 7, 851390), 'buyshort')
+2025-06-01 20:06:26,093 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 20:34:32,646 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2487.919959741011, 'price0', 2483.21, datetime.datetime(2025, 6, 1, 20, 34, 20, 574065), 'buylong')
+2025-06-01 20:35:40,619 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2483.5944821471426, 'price0', 2480.17, datetime.datetime(2025, 6, 1, 20, 35, 28, 587370), 'buylong')
+2025-06-01 22:06:43,088 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2498.755212791673, 'price0', 2501.92, datetime.datetime(2025, 6, 1, 22, 6, 31, 296475), 'buyshort')
+2025-06-01 22:25:35,303 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 22:37:55,417 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-01 22:38:04,716 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 02:03:36,053 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2531.446827140738, 'price0', 2526.49, datetime.datetime(2025, 6, 2, 2, 3, 24, 281339), 'buylong')
+2025-06-02 02:23:48,148 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2517.757456054808, 'price0', 2513.49, datetime.datetime(2025, 6, 2, 2, 23, 36, 227474), 'buylong')
+2025-06-02 04:36:27,110 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vpPOC', 2528.662625559206, 'price0', 2531.4, datetime.datetime(2025, 6, 2, 4, 36, 15, 333242), 'buyshort')
+2025-06-02 06:58:19,536 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 09:31:05,191 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 09:39:54,227 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 14:04:49,623 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vp_poc', 2495.8591075049508, 'price0', 2483.671989652246, datetime.datetime(2025, 6, 2, 14, 4, 37, 786960), 'buyshort')
+2025-06-02 15:01:47,534 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 15:05:33,323 - INFO - Dash is running on http://127.0.0.1:8050/
+

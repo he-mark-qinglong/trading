@@ -11,7 +11,7 @@ from db_client import SQLiteWALClient
 
 symbol="ETH-USDT-SWAP"
 WS_URL   = "wss://ws.okx.com:8443/ws/v5/public"
-MAX_ROWS = 20000   # 主表最大行数，超过后修剪最老数据
+MAX_ROWS = 100000   # 主表最大行数，超过后修剪最老数据
 
 # 把 CSV 路径换成 db
 DB_PATH  = f"{symbol}.db"
@@ -107,4 +107,4 @@ async def collect_trades_and_save(symbol="BTC-USDT-SWAP", interval=10):
 
 if __name__ == "__main__":
     # 启动示例，用 10s K 线
-    asyncio.run(collect_trades_and_save(symbol=symbol, interval=10))
+    asyncio.run(collect_trades_and_save(symbol=symbol, interval=4))

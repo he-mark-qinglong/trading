@@ -30,30 +30,28 @@ app.layout = html.Div([
     ),
     html.Div(id="close-status", style={"marginTop": "5px", "color": "green"}),
     dcc.Graph(id="kline-graph"),
-    dcc.Interval(id='interval', interval=5*1000, n_intervals=0),
+    dcc.Interval(id='interval', interval=10*1000, n_intervals=0),
     html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
 ])
 
 # 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
 colors = {
-    'LFrame_vpPOC_series':     'yellow',
-    'LFrame_ohlc5_series':     'green',
-    'SFrame_vpPOC':            'purple',
-    'SFrame_vwap_up':          'red',
-    'SFrame_vwap_up_getin':    'orange',
-    'SFrame_vwap_up_getout':   'chocolate',
+    'LFrame_vp_poc_series':     'yellow',
+    # 'LFrame_ohlc5_series':     'green',
+    'SFrame_vp_poc':            'purple',
+
+    'SFrame_vwap_up_poc':          'red',
+    # 'SFrame_vwap_up_getin':    'orange',
     'SFrame_vwap_up_sl':       'firebrick',
-    'SFrame_vwap_down':        'blue',
-    'SFrame_vwap_down_getin':  'deepskyblue',
-    'SFrame_vwap_down_getout': 'cyan',
+    'SFrame_vwap_down_poc':        'blue',
+    # 'SFrame_vwap_down_getin':  'deepskyblue',
     'SFrame_vwap_down_sl':     'seagreen',
-    'HFrame_vwap_up':          'magenta',
+
+    # 'HFrame_vwap_up_poc':          'magenta',
     'HFrame_vwap_up_getin':    'deeppink',
-    'HFrame_vwap_up_getout':   'hotpink',
     'HFrame_vwap_up_sl':       'orangered',
-    'HFrame_vwap_down':        'teal',
+    # 'HFrame_vwap_down_poc':        'teal',
     'HFrame_vwap_down_getin':  'turquoise',
-    'HFrame_vwap_down_getout': 'lightseagreen',
     'HFrame_vwap_down_sl':     'darkslategray',
 }
 vars_to_plot = list(colors.keys())
@@ -68,7 +66,7 @@ def update_graph(n):
         # 1. 从 SQLite 读最新 2000 条
         try:
             # 先拿最新 2000 条（倒序）
-            df = client.read_df(limit=1500, order_by="ts DESC")
+            df = client.read_df(limit=1800, order_by="ts DESC")
             if df.empty:
                 return go.Figure(), "暂无数据"
 
@@ -87,13 +85,13 @@ def update_graph(n):
 
         # 3. 转换时间，截取最后 2000 行
         df["ts"] = df["ts"].astype(int)
-        df = df.drop_duplicates("ts").sort_values("ts").iloc[-2000:].copy()
+        df = df.drop_duplicates("ts").sort_values("ts").iloc[-1800:].copy()
         df["datetime"] = pd.to_datetime(df["ts"], unit="s")
 
-        # 4. 计算所有 vpPOC / VWAP / STD 系列
+        # 4. 计算所有 vp_poc / VWAP / STD 系列
         before_cal = time.time()
-        multiVwap = LHFrameStd.MultiTFvpPOC()
-        multiVwap.calculate_SFrame_vpPOC_and_std(df)
+        multiVwap = LHFrameStd.MultiTFvp_poc(0.04, 24, 240, 960)
+        multiVwap.calculate_SFrame_vp_poc_and_std(df)
         after_calc = time.time()
         print(f'time consumed:{after_calc - before_cal}')
 
@@ -112,7 +110,7 @@ def update_graph(n):
         fig = make_subplots(
             rows=2, cols=1, shared_xaxes=True,
             vertical_spacing=0.1, row_heights=[0.7, 0.3],
-            subplot_titles=("K-line + vpPOC/VWAP", "Volume")
+            subplot_titles=("K-line + vp_poc/VWAP", "Volume")
         )
 
         # 7. 添加 K 线
@@ -123,7 +121,7 @@ def update_graph(n):
             name="4s-K"
         ), row=1, col=1)
 
-        # 8. 添加所有 vpPOC/VWAP 系列
+        # 8. 添加所有 vp_poc/VWAP 系列
         for var in vars_to_plot:
             series = getattr(multiVwap, var, None)
             if not isinstance(series, pd.Series) or series.isna().all():
@@ -135,8 +133,8 @@ def update_graph(n):
                 name=var,
                 line=dict(
                     color=colors[var],
-                    width=1.5,
-                    dash="dash" if "getin" in var or "getout" in var else "solid"
+                    width=1 if "HFrame" in var else 2,
+                    dash="dot" if ("HFrame" in var and not "_poc" in var )else "solid" if '_poc' in var else "dash"
                 )
             ), row=1, col=1)
 
