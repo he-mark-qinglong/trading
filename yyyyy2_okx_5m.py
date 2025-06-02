@@ -566,7 +566,7 @@ class trade_coin(object):
         # 1. 从 SQLite 读最新 2000 条
         try:
             # 先拿最新 2000 条（倒序）
-            df = self.client.read_df(limit=1000, order_by="ts DESC")
+            df = self.client.read_df(limit=1200, order_by="ts DESC")
             self.coin_data = df.sort_values("ts", ascending=True)
         except Exception as e:
             print(f"读取数据库错误：{e}", '&&&'*10)

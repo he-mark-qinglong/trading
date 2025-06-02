@@ -2899,3 +2899,22 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 
 2025-06-02 15:05:33,323 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-02 16:52:37,551 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'LFrame_vp_poc', 2492.3296893736915, 'price0', 2490.665457806045, datetime.datetime(2025, 6, 2, 16, 52, 25, 246046), 'buylong')
+2025-06-02 16:58:05,595 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 16:58:11,606 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:00:02,799 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:01:44,569 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:03:13,611 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:04:47,786 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:08:33,710 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:10:44,273 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-02 17:14:35,930 - INFO - Dash is running on http://127.0.0.1:8050/
+

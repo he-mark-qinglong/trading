@@ -85,7 +85,7 @@ def update_graph(n):
 
         # 3. 转换时间，截取最后 2000 行
         df["ts"] = df["ts"].astype(int)
-        df = df.drop_duplicates("ts").sort_values("ts").iloc[-1800:].copy()
+        df = df.drop_duplicates("ts").sort_values("ts")
         df["datetime"] = pd.to_datetime(df["ts"], unit="s")
 
         # 4. 计算所有 vp_poc / VWAP / STD 系列
