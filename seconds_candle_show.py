@@ -20,6 +20,11 @@ client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv")
 
 trade_client = None
 
+window_tau_l = int(12) 
+window_tau_h = window_tau_l * 10
+window_tau_s = window_tau_h * 4
+multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
+
 app = Dash(__name__)
 app.layout = html.Div([
     html.H2("OKX 4s K-line OHLCV (Auto-refresh)"),
@@ -41,10 +46,10 @@ colors = {
 
     'SFrame_vwap_up_poc':          'red',
     # 'SFrame_vwap_up_getin':    'orange',
-    'SFrame_vwap_up_sl':       'firebrick',
+    # 'SFrame_vwap_up_sl':       'firebrick',
     'SFrame_vwap_down_poc':        'blue',
     # 'SFrame_vwap_down_getin':  'deepskyblue',
-    'SFrame_vwap_down_sl':     'seagreen',
+    # 'SFrame_vwap_down_sl':     'seagreen',
 
     # 'HFrame_vwap_up_poc':          'magenta',
     'HFrame_vwap_up_getin':    'deeppink',
@@ -89,10 +94,7 @@ def update_graph(n):
 
         # 4. 计算所有 vp_poc / VWAP / STD 系列
         before_cal = time.time()
-        window_tau_l = int(12) 
-        window_tau_h = window_tau_l * 10
-        window_tau_s = window_tau_h * 4
-        multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
+        
         multiVwap.calculate_SFrame_vp_poc_and_std(df)
         after_calc = time.time()
         print(f'time consumed:{after_calc - before_cal}')

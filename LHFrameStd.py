@@ -215,11 +215,11 @@ class MultiTFvp_poc:
 
         self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
-        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + 2 * self.HFrame_price_std))
+        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,    rma(hhigh_poc + 2 * self.HFrame_price_std))
 
         self.HFrame_vwap_down_poc        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
         self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - self.HFrame_price_std))
-        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - 2 * self.HFrame_price_std))
+        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,  rma(hlow_poc - 2 * self.HFrame_price_std))
         
 import os
 import time

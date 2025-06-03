@@ -1,6 +1,8 @@
 import time
 from dataclasses import dataclass
 from typing import List, Callable, Optional, Set
+import support_resistance
+import numpy as np
 
 @dataclass
 class EntryTier:
@@ -29,11 +31,9 @@ class MultiFramePOCStrategy:
     def __init__(self,
                  long_rule: EntryRule,
                  short_rule: EntryRule,
-                 support_resistance,
-                 timeout: float = 20.0):
+                 timeout: float = 60.0):
         self.long_rule   = long_rule
         self.short_rule  = short_rule
-        self.sr          = support_resistance
         self.timeout     = timeout
 
         # 哪些 tier 已挂过，防止重复
@@ -79,18 +79,21 @@ class MultiFramePOCStrategy:
             if tier.consec_attr:
                 thresh = getattr(data_src, tier.consec_attr)
                 if tier.consec_compare == "above":
-                    ok = self.sr.consecutive_above_resistance(
+                    ok = support_resistance.consecutive_above_resistance(
                         close_series, thresh, tier.consec_count)
                 else:
-                    ok = self.sr.consecutive_below_support(
+                    ok = support_resistance.consecutive_below_support(
                         close_series, thresh, tier.consec_count)
                 if not ok:
                     continue
 
             # (2) 价格触及
-            price_t = getattr(data_src, tier.price_attr)
-            if not tier.compare(cur_close, price_t):
-                continue
+            if tier.consec_compare == "above":
+                price_t = np.max(getattr(data_src, tier.price_attr).iloc[-20])
+            else:
+                price_t = np.min(getattr(data_src, tier.price_attr).iloc[-20])
+            # if not tier.compare(cur_close, price_t):
+            #     continue
 
             # (3) 触发挂单
             opened.add(tier.name)

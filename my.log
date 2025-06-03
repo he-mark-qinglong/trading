@@ -2962,3 +2962,18 @@ Length: 100, dtype: float64, 'price0', 13.02, datetime.datetime(2025, 4, 30, 12,
 
 2025-06-02 23:51:08,454 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-03 02:24:51,493 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2576.0390106310274, 'price0', 2576.0390106310274, datetime.datetime(2025, 6, 3, 2, 24, 40, 189258), 'buyshort')
+2025-06-03 02:26:57,026 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2576.892765095635, 'price0', 2576.892765095635, datetime.datetime(2025, 6, 3, 2, 26, 43, 738777), 'buyshort')
+2025-06-03 02:40:55,388 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2537.29157193246, 'price0', 2537.29157193246, datetime.datetime(2025, 6, 3, 2, 40, 42, 164765), 'buylong')
+2025-06-03 03:41:45,635 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2528.2319900395046, 'price0', 2528.2319900395046, datetime.datetime(2025, 6, 3, 3, 41, 32, 342913), 'buylong')
+2025-06-03 04:01:15,624 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2538.4856231189165, 'price0', 2538.4856231189165, datetime.datetime(2025, 6, 3, 4, 1, 2, 377480), 'buyshort')
+2025-06-03 04:11:05,063 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2544.039563951141, 'price0', 2544.039563951141, datetime.datetime(2025, 6, 3, 4, 10, 51, 808029), 'buyshort')
+2025-06-03 13:32:36,292 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-03 13:54:11,472 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2611.4883974617, 'price0', 2611.4883974617, datetime.datetime(2025, 6, 3, 13, 53, 58, 212693), 'buyshort')
+2025-06-03 13:57:37,868 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2611.331439954149, 'price0', 2611.331439954149, datetime.datetime(2025, 6, 3, 13, 57, 24, 632046), 'buyshort')
+2025-06-03 14:21:03,087 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2602.654750209243, 'price0', 2602.654750209243, datetime.datetime(2025, 6, 3, 14, 20, 49, 570655), 'buylong')
+2025-06-03 15:05:18,413 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2621.129056966618, 'price0', 2621.129056966618, datetime.datetime(2025, 6, 3, 15, 4, 56, 670035), 'buyshort')
+2025-06-03 15:08:33,911 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2619.2062170241907, 'price0', 2619.2062170241907, datetime.datetime(2025, 6, 3, 15, 8, 20, 683541), 'buyshort')
+2025-06-03 15:18:07,145 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2605.1006097996487, 'price0', 2605.1006097996487, datetime.datetime(2025, 6, 3, 15, 17, 53, 857358), 'buylong')
+2025-06-03 15:22:32,732 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2609.8000920134714, 'price0', 2609.8000920134714, datetime.datetime(2025, 6, 3, 15, 22, 19, 549816), 'buylong')

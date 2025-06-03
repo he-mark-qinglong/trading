@@ -42,7 +42,7 @@ from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, calc_atr
 
 
 DEBUG = True
-import support_resistance
+
 
 def get_martingale_coefficient(counter, base=1.06, delta=0.05):
     if counter <= 1:
@@ -78,35 +78,26 @@ class trade_coin(object):
 
         long_rule = EntryRule([
             EntryTier(
-                name="conservative",
-                price_attr="SFrame_vwap_down_sl",
-                compare=lambda c, t: c < t,
-                amount=2,
-                consec_attr="SFrame_vwap_down_poc",
-                consec_compare="below",
-                consec_count=10
-            ),
-            EntryTier(
                 name="aggressive",
                 price_attr="HFrame_vwap_down_getin",
                 compare=lambda c, t: c < t,
                 amount=1,
                 consec_attr="HFrame_vwap_down_poc",
                 consec_compare="below",
-                consec_count=7
+                consec_count=3
+            ),
+            EntryTier(
+                name="conservative",
+                price_attr="HFrame_vwap_down_sl",
+                compare=lambda c, t: c < t,
+                amount=2,
+                consec_attr="SFrame_vwap_down_poc",
+                consec_compare="below",
+                consec_count=9
             ),
         ])
 
         short_rule = EntryRule([
-            EntryTier(
-                name="conservative",
-                price_attr="SFrame_vwap_up_sl",
-                compare=lambda c, t: c > t,
-                amount=2,
-                consec_attr="SFrame_vwap_up_poc",
-                consec_compare="above",
-                consec_count=10
-            ),
             EntryTier(
                 name="aggressive",
                 price_attr="HFrame_vwap_up_getin",
@@ -116,9 +107,19 @@ class trade_coin(object):
                 consec_compare="above",
                 consec_count=7
             ),
+            EntryTier(
+                name="conservative",
+                price_attr="HFrame_vwap_up_sl",
+                compare=lambda c, t: c > t,
+                amount=2,
+                consec_attr="SFrame_vwap_up_poc",
+                consec_compare="above",
+                consec_count=9
+            ),
+            
         ])
-
-        self.strategy = MultiFramePOCStrategy(long_rule, short_rule, support_resistance)
+        # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
+        self.strategy = MultiFramePOCStrategy(long_rule, short_rule, 4 * 30)
         
         if 'ETH' in self.symbol:
             self.asset_coe=100
@@ -190,15 +191,7 @@ class trade_coin(object):
                 except Exception as e:
                     print(f"Error reading {csv_short}:", e)
                     record_buy_total_short = pd.DataFrame(columns=self.COLUMNS)
-            '''
-            索引	含义	说明
-            0	时间（Timestamp）	日期时间，格式 "YYYY-MM-DD HH:MM:SS"
-            1	开盘价 (Open)	该时间周期的开盘价格
-            2	最高价 (High)	该时间周期的最高价格
-            3	最低价 (Low)	该时间周期的最低价格
-            4	收盘价 (Close)	该时间周期的收盘价格
-            5	成交量 (Volume)	该时间周期的成交量或成交额
-            '''
+            
             window_tau_l = int(12)
             window_tau_h = window_tau_l * 10
             window_tau_s = window_tau_h * 4
@@ -218,8 +211,6 @@ class trade_coin(object):
                 
                 cur_close = close.iloc[-1]
 
-                # 在每根 bar 收盘后调用：
-                
                 for side in ("long", "short"):
                     # 1) 检查超时撤单
                     if self.strategy.should_cancel(side):
@@ -399,7 +390,7 @@ class trade_coin(object):
                                         (cur_close <= SFrame_vwap_down_poc and short_profit > fee_require_profit)) 
                         
                         bewlow_sl = (cur_close <= HFrame_vwap_down_sl and short_profit > 0)  #最后一种，不论盈亏都应该平仓。
-                        consecutive_belowsl_condition = (multFramevp_poc.SFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).iloc[-3:].sum() >= 2  # 最近三根K线中有2根以上为True
+                        consecutive_belowsl_condition = (multFramevp_poc.HFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).iloc[-3:].sum() >= 2  # 最近三根K线中有2根以上为True
 
                         close_amount = amount_short
                         if bewlow_sl or consecutive_belowsl_condition:
@@ -429,7 +420,7 @@ class trade_coin(object):
                         
                         uppon_sl = (cur_close >= HFrame_vwap_up_sl and long_profit > 0)
                         # 最近三根K线中有2根以上为True
-                        consecutive_upponsl_condition = (multFramevp_poc.SFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).iloc[-3:].sum() >= 2 
+                        consecutive_upponsl_condition = (multFramevp_poc.HFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).iloc[-3:].sum() >= 2 
 
                         close_amount = amount_long
                         if consecutive_upponsl_condition:
