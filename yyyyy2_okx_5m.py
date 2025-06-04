@@ -27,7 +27,7 @@ import traceback# traceback.print_exc()
 from collections import deque
 
 from db_client import SQLiteWALClient
-from strategy import MultiFramePOCStrategy, EntryRule, EntryTier
+from strategy import MultiFramePOCStrategy, RuleConfig
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -76,50 +76,9 @@ class trade_coin(object):
         DB_PATH = f'{symbol}.db'
         self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv")
 
-        long_rule = EntryRule([
-            EntryTier(
-                name="aggressive",
-                price_attr="HFrame_vwap_down_getin",
-                compare=lambda c, t: c < t,
-                amount=1,
-                consec_attr="HFrame_vwap_down_poc",
-                consec_compare="below",
-                consec_count=3
-            ),
-            EntryTier(
-                name="conservative",
-                price_attr="HFrame_vwap_down_sl",
-                compare=lambda c, t: c < t,
-                amount=2,
-                consec_attr="SFrame_vwap_down_poc",
-                consec_compare="below",
-                consec_count=9
-            ),
-        ])
-
-        short_rule = EntryRule([
-            EntryTier(
-                name="aggressive",
-                price_attr="HFrame_vwap_up_getin",
-                compare=lambda c, t: c > t,
-                amount=1,
-                consec_attr="HFrame_vwap_up_poc",
-                consec_compare="above",
-                consec_count=7
-            ),
-            EntryTier(
-                name="conservative",
-                price_attr="HFrame_vwap_up_sl",
-                compare=lambda c, t: c > t,
-                amount=2,
-                consec_attr="SFrame_vwap_up_poc",
-                consec_compare="above",
-                consec_count=9
-            ),
-            
-        ])
+        
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
-        self.strategy = MultiFramePOCStrategy(long_rule, short_rule, 4 * 30)
+        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 4 * 30)
         
         if 'ETH' in self.symbol:
             self.asset_coe=100
@@ -228,7 +187,7 @@ class trade_coin(object):
                 if sig_long != None or sig_short != None:
                     print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, sig_long=={sig_long\
                             }, self.upl_short_open=={self.upl_short_open==1}, sig_short=={sig_short}, ',
-                        '--3'*15)
+                        '--3'*100)
 
                 if self.asset_normal==1 and self.upl_short_open==1 and sig_short != None and sig_short.action:
                     #开空

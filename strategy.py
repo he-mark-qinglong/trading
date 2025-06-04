@@ -26,6 +26,53 @@ class OrderSignal:
     amount:     int                         # 挂单手数
     order_type: str                         # "limit"
     order_time: float                       # 发单时间戳
+class RuleConfig:
+    #注意：conservative应该要在前面，因为后续循环索引规则的时候需要先判断突破次数多的情况，
+    #     如果顺序是aggressive在前面，conservative可能会因为consec_count更大而一直被aggressive的规则给提前判断return,而无法被循环遍历到。
+    long_rule = EntryRule([
+        EntryTier(
+            name="conservative",
+            price_attr="SFrame_vwap_down_sl",
+            compare=lambda c, t: c < t,
+            amount=1,
+            consec_attr="SFrame_vwap_down_poc",
+            consec_compare="below",
+            consec_count=1
+        ),
+        EntryTier(
+            name="aggressive",
+            price_attr="HFrame_vwap_down_getin",
+            compare=lambda c, t: c < t,
+            amount=1,
+            consec_attr="SFrame_vwap_down_poc",
+            consec_compare="below",
+            consec_count=6
+        ),
+        
+    ])
+
+    short_rule = EntryRule([
+        EntryTier(
+            name="conservative",
+            price_attr="HFrame_vwap_up_sl",
+            compare=lambda c, t: c > t,
+            amount=1,
+            consec_attr="SFrame_vwap_up_poc",
+            consec_compare="above",
+            consec_count=1
+        ),
+        EntryTier(
+            name="aggressive",
+            price_attr="HFrame_vwap_up_getin",
+            compare=lambda c, t: c > t,
+            amount=1,
+            consec_attr="SFrame_vwap_up_poc",
+            consec_compare="above",
+            consec_count=6
+        ),
+        
+        
+    ])
 
 class MultiFramePOCStrategy:
     def __init__(self,
@@ -122,88 +169,5 @@ class MultiFramePOCStrategy:
         self._has_order[side]  = False
         self._order_time[side] = None
 
-'''
-SFrame_vwap_up_getin = multFramevp_poc.SFrame_vwap_up_getin.iloc[-1]
-                SFrame_vwap_down_getin = multFramevp_poc.SFrame_vwap_down_getin.iloc[-1]
+        self._opened[side].clear()
 
-                SFrame_vwap_up_poc = multFramevp_poc.SFrame_vwap_up_poc.iloc[-1]
-                SFrame_vwap_down_poc = multFramevp_poc.SFrame_vwap_down_poc.iloc[-1]
-                SFrame_vwap_down_sl = multFramevp_poc.SFrame_vwap_down_sl.iloc[-1]
-                SFrame_vwap_up_sl = multFramevp_poc.SFrame_vwap_up_sl.iloc[-1]
-
-                HFrame_vwap_down_getin = multFramevp_poc.HFrame_vwap_down_getin.iloc[-1]
-                HFrame_vwap_up_getin = multFramevp_poc.HFrame_vwap_up_getin.iloc[-1]
-                HFrame_vwap_up_poc = multFramevp_poc.HFrame_vwap_up_poc.iloc[-1]
-                HFrame_vwap_down_poc = multFramevp_poc.HFrame_vwap_down_poc.iloc[-1]
-                HFrame_vwap_down_sl = multFramevp_poc.HFrame_vwap_down_sl.iloc[-1]
-                HFrame_vwap_up_sl = multFramevp_poc.HFrame_vwap_up_sl.iloc[-1]
-
-                cur_high = hh2.iloc[-1]
-                is_short_un_opend = len(record_buy_total_short) == 0
-                hard_short = False
-                if hard_short:
-                    if is_short_un_opend:
-                        conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_getin, 10)
-                        #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
-                        close_above_vwap = cur_close > SFrame_vwap_up_poc
-                        if  ( conecutive_above_s and close_above_vwap) or (cur_close >= HFrame_vwap_up_sl*1.001): 
-                            multiFrame_vp_poc_short=1
-                            self.short_order_record_time = time.time()
-
-                            print("open", "-"*100)
-                    else:  #加仓条件
-                        betterThanPreLong = float(record_buy_total_short['price'].iloc[-1]) < cur_close  #更高的价格才加空仓
-                        time_cond =  time.time() - float(record_buy_total_short['record_time'].iloc[-1]) > 20*len(record_buy_total_short)
-                        conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_getin, 7 )
-                        close_above_vwap = (cur_close > SFrame_vwap_up_poc)
-                        if ( conecutive_above_s and close_above_vwap)\
-                                and time_cond and betterThanPreLong:
-                            multiFrame_vp_poc_short=1
-
-                            self.short_order_record_time = time.time()
-                            print("append open","-"*100)
-                else:
-                    if is_short_un_opend:
-                        conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_poc, 10)
-                        #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
-                        close_above_getin = cur_close > SFrame_vwap_up_getin 
-                        if  ( conecutive_above_s and close_above_getin) or (cur_close >= HFrame_vwap_up_sl*0.999): 
-                            multiFrame_vp_poc_short=1
-                            self.short_order_record_time = time.time()
-
-                            print("open", "-"*100)
-                    else:  #加仓条件
-                        betterThanPreLong = float(record_buy_total_short['price'].iloc[-1]) < cur_close  #更高的价格才加空仓
-                        time_cond =  time.time() - float(record_buy_total_short['record_time'].iloc[-1]) > 20*len(record_buy_total_short)
-                        conecutive_above_s = support_resistance.consecutive_above_resistance(close, multFramevp_poc.SFrame_vwap_up_poc, 7 )
-                        close_above_getin = (cur_close > SFrame_vwap_up_getin)
-                        if ( conecutive_above_s and close_above_getin)\
-                                and time_cond and betterThanPreLong:
-                            multiFrame_vp_poc_short=1
-
-                            self.short_order_record_time = time.time()
-                            print("append open","-"*100)
-                    
-                is_long_un_opend = len(record_buy_total_long) == 0
-                if is_long_un_opend:
-                    consecutive_break_resistance_l = support_resistance.consecutive_below_support(close, multFramevp_poc.SFrame_vwap_down_poc, 10)
-                    #首次开仓要大周期和中周期的getin都触摸才算。补仓则是价格比开仓价格更优并且触摸中周期的getin
-                    close_below_getin =  SFrame_vwap_down_getin > cur_close
-                    if (consecutive_break_resistance_l and close_below_getin) or (SFrame_vwap_down_sl >= cur_close and HFrame_vwap_down_sl >= cur_close):  
-                        
-                        multiFrame_vp_poc_long=1
-                        self.long_order_record_time = time.time()
-
-                        print("open", "+"*100)
-                else:  #加仓条件
-                    betterThanPreShort = float(record_buy_total_long['price'].iloc[-1])  > cur_close  #更低的价格才加多仓
-                    time_cond = time.time()-float(record_buy_total_long['record_time'].iloc[-1]) > 20*len(record_buy_total_long)
-                    consecutive_break_resistance_l = support_resistance.consecutive_below_support(close, multFramevp_poc.SFrame_vwap_down_poc, 7)
-                    close_below_getin = SFrame_vwap_down_getin > cur_close
-                    if (consecutive_break_resistance_l and close_below_getin) \
-                        and time_cond and betterThanPreShort:
-
-                        multiFrame_vp_poc_long=1
-                        self.long_order_record_time = time.time()
-                        print("append open", "+"*100)
-'''
