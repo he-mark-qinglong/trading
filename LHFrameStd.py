@@ -16,6 +16,7 @@ class MultiTFvp_poc:
   
                  std_window_LFrame=15):  
         self.lambd = lambd  
+        self.rma_smooth_window = 9
         self.window_LFrame = window_LFrame  
         self.window_HFrame = window_HFrame  
         self.window_SFrame = window_SFrame
@@ -44,64 +45,6 @@ class MultiTFvp_poc:
         self.SFrame_vwap_down_sl = None
         self.SFrame_vwap_up_sl = None
     
-    # def calculate_SFrame_vp_poc_and_std(self, coin_date_df):  
-    
-    #     open = coin_date_df['open']
-    #     high = coin_date_df['high']
-    #     low = coin_date_df['low']  
-    #     close = coin_date_df['close']  
-    #     vol = coin_date_df['vol']
-
-    #     self.LFrame_vp_poc_series = vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_LFrame, 40, 0.995, 0.99)
-         
-    #     self.SFrame_vp_poc =  vwap_calc.vpvr_center_vwap_log_decay(open, close, vol, self.window_SFrame, 40, 0.995, 0.99)   
-
-    #     low_poc, high_poc = vwap_calc.vpvr_pct_band_vwap_log_decay(
-    #                 open_prices=open,
-    #                 close_prices=close,
-    #                 vol=vol,
-    #                 length=self.window_SFrame,         # 滑动窗口长度
-    #                 bins=40,
-    #                 pct=0.07,
-    #                 decay=0.995,
-    #                 vwap_series=self.SFrame_vp_poc   # vwap请提前自行计算、赋值
-    #             )
-    #     self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index) 
-       
-
-    #     # weights_l, weights_c, weights_h, weights_o = 1.5, 2, 1.5, 0.5  
-    #     # weight_sum = weights_l + weights_c + weights_h + weights_o  
-    #     # ohlc5_values = (low * weights_l + close * weights_c + high * weights_h + open_ * weights_o) / weight_sum  
-    #     # self.LFrame_ohlc5_series = pd.Series(ohlc5_values.values, index=coin_date_df.index)  
-        
-    #     self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.window_LFrame)
-
-    #     # 假设 close, SFrame_vp_poc, ohlc5 为 pd.Series
-    #     delta_high = np.maximum(close - self.SFrame_vp_poc, 0)
-    #     # 过去240根K线内的最大delta_high的绝对值
-    #     max_delta_high = delta_high.rolling(240).max().abs()
-
-    #     delta_low = np.minimum(close - self.SFrame_vp_poc, 0)
-    #     # 过去240根K线内的最小delta_low的绝对值
-    #     min_delta_low = delta_low.rolling(240).min().abs()
-
-    #     # 取二者较大值
-    #     HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
-
-    #     # ohlc5标准差, 按HFrame_vpLen窗口计算
-    #     self.HFrame_price_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
-    #     self.HFrame_price_std.index = coin_date_df.index  
-        
-    #     self.SFrame_vwap_up = ta.rma(high_poc, length=self.window_LFrame)
-    #     self.SFrame_vwap_up_getin = ta.rma(high_poc + self.HFrame_price_std, length=self.window_LFrame)
-    #     self.SFrame_vwap_up_getout = ta.rma(high_poc - self.HFrame_price_std, length=self.window_LFrame)
-
-    #     self.SFrame_vwap_down = ta.rma(low_poc, length=self.window_LFrame)
-    #     self.SFrame_vwap_down_getin = ta.rma(low_poc - self.HFrame_price_std, length=self.window_LFrame)
-    #     self.SFrame_vwap_down_getout = ta.rma(low_poc + self.HFrame_price_std, length=self.window_LFrame)
-
-    #     self.SFrame_vwap_down_sl = ta.rma(low_poc - 2*self.HFrame_price_std, length=self.window_LFrame)
-    #     self.SFrame_vwap_up_sl = ta.rma(high_poc + 2*self.HFrame_price_std, length=self.window_LFrame)
     def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
         open_  = coin_date_df['open']
         high   = coin_date_df['high']
@@ -120,13 +63,13 @@ class MultiTFvp_poc:
             future_H = executor.submit(
                 vwap_calc.vpvr_center_vwap_log_decay,
                 open_, close, vol,
-                self.window_HFrame, 40, 0.995, 0.99,
+                self.window_HFrame, 40, 1 - (0.07 * 2), 0.99,
                 debug=debug,
             )
             future_S = executor.submit(
                 vwap_calc.vpvr_center_vwap_log_decay,
                 open_, close, vol,
-                self.window_SFrame, 40, 0.995, 0.99,
+                self.window_SFrame, 40, 1 - (0.07 * 1), 0.99,
                 debug=debug,
             )
 
@@ -141,7 +84,7 @@ class MultiTFvp_poc:
                 vol=vol,
                 length=self.window_SFrame,
                 bins=40,
-                pct=0.1,
+                pct=0.07,
                 decay=0.995,
                 vwap_series=sframe_vp,
                 debug=debug,
@@ -153,7 +96,7 @@ class MultiTFvp_poc:
                 vol=vol,
                 length=self.window_HFrame,
                 bins=40,
-                pct=0.1,
+                pct=0.07,
                 decay=0.995,
                 vwap_series=hframe_vp,
                 debug=debug,
@@ -170,7 +113,7 @@ class MultiTFvp_poc:
         self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
 
         # 对 SFrame_vp_poc 做 RMA 平滑
-        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.window_LFrame)
+        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.rma_smooth_window)
 
         # 计算 HFrame 的最大摆幅
         delta_high = np.maximum(close - self.HFrame_vp_poc, 0)
@@ -195,23 +138,22 @@ class MultiTFvp_poc:
         self.SFrame_price_std.index = coin_date_df.index
         
         # 2. SFrame 上下边界及进出场线（用 ta.rma）
-        self.SFrame_vwap_up_poc        = ta.rma(shigh_poc, length=self.window_LFrame)
-        self.SFrame_vwap_up_getin  = ta.rma(shigh_poc + self.SFrame_price_std, length=self.window_LFrame)
-        self.SFrame_vwap_up_getout = ta.rma(shigh_poc - self.SFrame_price_std, length=self.window_LFrame)
-        self.SFrame_vwap_up_sl     = ta.rma(shigh_poc + 2 * self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_up_poc        = ta.rma(shigh_poc, length=self.rma_smooth_window)
+        self.SFrame_vwap_up_getin  = ta.rma(shigh_poc + self.SFrame_price_std, length=self.rma_smooth_window)
+        self.SFrame_vwap_up_getout = ta.rma(shigh_poc - self.SFrame_price_std, length=self.rma_smooth_window)
+        self.SFrame_vwap_up_sl     = ta.rma(shigh_poc + 2 * self.SFrame_price_std, length=self.rma_smooth_window)
 
-        self.SFrame_vwap_down_poc        = ta.rma(slow_poc, length=self.window_LFrame)
-        self.SFrame_vwap_down_getin  = ta.rma(slow_poc - self.SFrame_price_std, length=self.window_LFrame)
-        self.SFrame_vwap_down_getout = ta.rma(slow_poc + self.SFrame_price_std, length=self.window_LFrame)
-        self.SFrame_vwap_down_sl     = ta.rma(slow_poc - 2 * self.SFrame_price_std, length=self.window_LFrame)
+        self.SFrame_vwap_down_poc        = ta.rma(slow_poc, length=self.rma_smooth_window)
+        self.SFrame_vwap_down_getin  = ta.rma(slow_poc - self.SFrame_price_std, length=self.rma_smooth_window)
+        self.SFrame_vwap_down_getout = ta.rma(slow_poc + self.SFrame_price_std, length=self.rma_smooth_window)
+        self.SFrame_vwap_down_sl     = ta.rma(slow_poc - 2 * self.SFrame_price_std, length=self.rma_smooth_window)
 
         # 3. 计算 HFrame 的价格标准差，并对齐索引
         h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
         self.HFrame_price_std = h_std.reindex(coin_date_df.index) * self.golden_split_factor
 
         # 4. HFrame 上下边界及进出场线（元素级取最大/最小）
-        #    注意这里继续用 length=self.window_LFrame，若要用 HFrame 窗口可自行调整
-        rma = lambda series: ta.rma(series, length=self.window_LFrame)
+        rma = lambda series: ta.rma(series, length=self.rma_smooth_window)
 
         self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))

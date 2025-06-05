@@ -128,7 +128,16 @@ class trade_coin(object):
                 print('++++当日资金回撤百分比为%s'%(1-max_draw),self.usdt_total,max(self.asset_record))
             
             time11 = datetime.datetime.now()
-            self.coin_date=self.get_kline()
+            self.coin_data=self.get_kline()
+            # 如果 df 行数 < 100，就取所有
+            n = min(len(self.coin_data), 100)
+            
+            # 检查最近 n 行里有没有任何一个 NaN/NA
+            has_missing = self.coin_data.iloc[-n:].isna().values.any()
+            if n < 100 or has_missing:
+                print('数据准备中')
+                return
+            
             # 读取买入多头 CSV
             with lock:
                 csv_long = os.path.join(root, f"record_buy_total_long_{self.symbol}_{self.user}.csv")
@@ -152,21 +161,21 @@ class trade_coin(object):
                     record_buy_total_short = pd.DataFrame(columns=self.COLUMNS)
             
             window_tau_l = int(12)
-            window_tau_h = window_tau_l * 10
-            window_tau_s = window_tau_h * 4
+            window_tau_h = window_tau_l * 5
+            window_tau_s = window_tau_h * 5
             multFramevp_poc = MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
-            multFramevp_poc.calculate_SFrame_vp_poc_and_std(self.coin_date, DEBUG)
+            multFramevp_poc.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
 
             #debug ploting content
             # plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, False)
             if 1:
                 '''开平仓信号计算'''
                 print ("\t 开仓信号计算 开始 %s" %time.ctime())
-                close = self.coin_date.iloc[:,4] 
-                # hh2 = self.coin_date.iloc[:,2] 
-                # ll2 = self.coin_date.iloc[:,3] 
-                # open2 = self.coin_date.iloc[:,1] 
-                # vol = self.coin_date.iloc[:,5]
+                close = self.coin_data.iloc[:,4] 
+                # hh2 = self.coin_data.iloc[:,2] 
+                # ll2 = self.coin_data.iloc[:,3] 
+                # open2 = self.coin_data.iloc[:,1] 
+                # vol = self.coin_data.iloc[:,5]
                 
                 cur_close = close.iloc[-1]
 
@@ -341,18 +350,25 @@ class trade_coin(object):
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
                     
-                    stop_profit=max(fee_require_profit, calc_atr(self.coin_date).iloc[-1]/cur_close * 15 * 2)  #4s * 15 = 60s,  1 min
-
+                    stop_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 8)  #4s * 15 = 60s,  1 min
+                    
+                    ChineseTradeTime = False
+                    center_tp_poc = (multFramevp_poc.SFrame_vwap_up_getin.iloc[-1] - multFramevp_poc.SFrame_vwap_down_getin.iloc[-1])/2 + multFramevp_poc.SFrame_vwap_down_getin.iloc[-1]
+                    NoneTradeTimeProfit = 0.0025
+                    # if not ChineseTradeTime:
+                    #     stop_profit = min(stop_profit, 0.0025)  #20倍杠杆的4%，夜间盘看不到就当做马丁止盈吧。 后续加一下时间段来区分。
+                    
                     if amount_short>0:
                         short_profit = upl_short/notionalUsd_short
-                        tp_condition = (#short_profit >stop_profit or\
+                        tp_condition = (short_profit >stop_profit or\
                                         (cur_close <= SFrame_vwap_down_poc and short_profit > fee_require_profit)) 
                         
                         bewlow_sl = (cur_close <= HFrame_vwap_down_sl and short_profit > 0)  #最后一种，不论盈亏都应该平仓。
                         consecutive_belowsl_condition = (multFramevp_poc.HFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).iloc[-3:].sum() >= 2  # 最近三根K线中有2根以上为True
+                        cross_center = cur_close - center_tp_poc < 0
 
-                        close_amount = amount_short
-                        if bewlow_sl or consecutive_belowsl_condition:
+                        close_amount = amount_short and short_profit > NoneTradeTimeProfit
+                        if bewlow_sl or consecutive_belowsl_condition or cross_center:
                             close_amount = 1  #单次平仓（目的是减低风险而不是为了获利）
                         if tp_condition:
                             close_amount = amount_short
@@ -374,15 +390,15 @@ class trade_coin(object):
                             plot_all_multiftfpoc_vars( multFramevp_poc, self.symbol, False)
                     if amount_long>0:
                         long_profit = upl_long/notionalUsd_long
-                        tp_condition = (#long_profit>stop_profit or 
+                        tp_condition = (long_profit>stop_profit or 
                                         (cur_close >= SFrame_vwap_up_poc and long_profit > fee_require_profit))  
-                        
+                        cross_center = cur_close - center_tp_poc > 0
                         uppon_sl = (cur_close >= HFrame_vwap_up_sl and long_profit > 0)
                         # 最近三根K线中有2根以上为True
                         consecutive_upponsl_condition = (multFramevp_poc.HFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).iloc[-3:].sum() >= 2 
 
-                        close_amount = amount_long
-                        if consecutive_upponsl_condition:
+                        close_amount = amount_long and long_profit > NoneTradeTimeProfit
+                        if consecutive_upponsl_condition or cross_center:
                             close_amount = 1  #单次平仓（目的是减低风险而不是为了获利）
                         if tp_condition:
                             close_amount = amount_long
@@ -442,7 +458,7 @@ class trade_coin(object):
                               print('selllong erro1',e)
                 
                 # #     # from vpvr_gmm_splited import VPVRAnalyzer
-                # #     # analyzer = VPVRAnalyzer(self.coin_date, n_bins=60, n_components=3)
+                # #     # analyzer = VPVRAnalyzer(self.coin_data, n_bins=60, n_components=3)
                 # #     # result = analyzer.run(self.symbol)
                 # #     # print(result['regions'])
         except Exception as e:
@@ -482,13 +498,13 @@ class trade_coin(object):
     #                 break
     #     time.sleep(0.2) #4
     #     f_kline_3m = f_kline_3m['data']
-    #     coin_date = pd.DataFrame(np.zeros([len(f_kline_3m),len(f_kline_3m[0])])) #时间 开盘价 最高价 最低价 收盘价 交易量 交易量转化BTC数量
+    #     coin_data = pd.DataFrame(np.zeros([len(f_kline_3m),len(f_kline_3m[0])])) #时间 开盘价 最高价 最低价 收盘价 交易量 交易量转化BTC数量
     #     print ("\t 实时K线数据更新 开始 %s" %time.ctime())
-    #     coin_date= pd.DataFrame([[time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(float(f_kline_3m[i][0])/1000)),float(f_kline_3m[i][1]),float(f_kline_3m[i][2]),float(f_kline_3m[i][3]),float(f_kline_3m[i][4]),float(f_kline_3m[i][5])] for i in range(len(f_kline_3m))    ])    
-    #     print ("\t 实时K线数据更新 结束 %s " %time.ctime(), f'len of coin_date={len(coin_date)}\n')
-    #     coin_date = coin_date.sort_index(axis = 0,ascending = False)
-    #     coin_date.index = range(len(coin_date))
-    #     return coin_date          
+    #     coin_data= pd.DataFrame([[time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(float(f_kline_3m[i][0])/1000)),float(f_kline_3m[i][1]),float(f_kline_3m[i][2]),float(f_kline_3m[i][3]),float(f_kline_3m[i][4]),float(f_kline_3m[i][5])] for i in range(len(f_kline_3m))    ])    
+    #     print ("\t 实时K线数据更新 结束 %s " %time.ctime(), f'len of coin_data={len(coin_data)}\n')
+    #     coin_data = coin_data.sort_index(axis = 0,ascending = False)
+    #     coin_data.index = range(len(coin_data))
+    #     return coin_data          
     
     def get_kline(self, init=False):
         """

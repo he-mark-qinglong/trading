@@ -46,7 +46,7 @@ class RuleConfig:
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=6
+            consec_count=8
         ),
         
     ])
@@ -68,7 +68,7 @@ class RuleConfig:
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
-            consec_count=6
+            consec_count=8
         ),
         
         
