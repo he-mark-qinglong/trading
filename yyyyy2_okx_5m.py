@@ -78,7 +78,7 @@ class trade_coin(object):
 
         
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
-        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 4 * 30)
+        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 5 * 3)
         
         if 'ETH' in self.symbol:
             self.asset_coe=100

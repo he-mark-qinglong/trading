@@ -12,7 +12,7 @@ from db_client import SQLiteWALClient
 symbol    = "ETH-USDT-SWAP"
 WS_URL    = "wss://ws.okx.com:8443/ws/v5/public"
 MAX_ROWS  = 100000      # 每张表保留的最大行数
-interval  = 5           # 基础聚合周期：5s
+INTERVAL  = 5           # 基础聚合周期：5s
 
 DB_PATH   = f"{symbol}.db"
 # 主表：1×interval
@@ -103,11 +103,11 @@ async def _collect_trades_and_save_once(symbol="BTC-USDT-SWAP", interval=4):
                     print(f"4× saved @ ts={ob['ts']}: "
                           f"{ob['open']},{hh},{ll},{cb['close']},{vv}")
 
-                    # 滑动窗口：去掉最早一根
-                    agg_buffer.pop(0)
+                    #滑动窗口：去掉最早一根
+                    agg_buffer.clear()
 
                 # 4. 修剪最老数据：保留最新 MAX_ROWS 条
-                for cli in (client1x, client4x):
+                for cli in (client1x, ):  #, client4x):
                     conn = cli._connect()
                     with conn:
                         total = conn.execute(
@@ -143,4 +143,4 @@ async def collect_trades_and_save(symbol="BTC-USDT-SWAP", interval=4):
 
 if __name__ == "__main__":
     # 启动：4s K 线 + 同步聚合 16s K 线
-    asyncio.run(collect_trades_and_save(symbol, interval))
+    asyncio.run(collect_trades_and_save(symbol, INTERVAL))

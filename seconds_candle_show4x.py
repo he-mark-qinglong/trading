@@ -20,7 +20,7 @@ from db_client import SQLiteWALClient
 basic_time_interval = 5
 use4x = True
 symbol = "ETH-USDT-SWAP"
-
+LIMIT_K_N = 600
 
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_4x" if use4x else "ohlcv")
@@ -77,7 +77,7 @@ def update_graph(n):
         # 1. 从 SQLite 读最新 2000 条
         try:
             # 先拿最新 2000 条（倒序）
-            df = client.read_df(limit=1800, order_by="ts DESC")
+            df = client.read_df(limit=LIMIT_K_N, order_by="ts DESC")
             if df.empty:
                 return go.Figure(), "暂无数据"
 

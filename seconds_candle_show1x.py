@@ -18,7 +18,7 @@ from db_client import SQLiteWALClient
 use4x = False
 symbol = "ETH-USDT-SWAP"
 
-
+LIMIT_K_N = 1800
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_1x")
 
@@ -26,7 +26,7 @@ trade_client = None
 
 window_tau_l = int(12) 
 window_tau_h = window_tau_l * 5
-window_tau_s = window_tau_h * 5
+window_tau_s = window_tau_h * 12
 multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
 
 app = Dash(__name__)
@@ -74,7 +74,7 @@ def update_graph(n):
         # 1. 从 SQLite 读最新 2000 条
         try:
             # 先拿最新 2000 条（倒序）
-            df = client.read_df(limit=1800, order_by="ts DESC")
+            df = client.read_df(limit=LIMIT_K_N, order_by="ts DESC")
             if df.empty:
                 return go.Figure(), "暂无数据"
 

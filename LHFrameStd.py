@@ -136,24 +136,33 @@ class MultiTFvp_poc:
             + SFrame_max_swing * 0.1
         ) * self.golden_split_factor
         self.SFrame_price_std.index = coin_date_df.index
-        
-        # 2. SFrame 上下边界及进出场线（用 ta.rma）
-        self.SFrame_vwap_up_poc        = ta.rma(shigh_poc, length=self.rma_smooth_window)
-        self.SFrame_vwap_up_getin  = ta.rma(shigh_poc + self.SFrame_price_std, length=self.rma_smooth_window)
-        self.SFrame_vwap_up_getout = ta.rma(shigh_poc - self.SFrame_price_std, length=self.rma_smooth_window)
-        self.SFrame_vwap_up_sl     = ta.rma(shigh_poc + 2 * self.SFrame_price_std, length=self.rma_smooth_window)
+        '''
+        性能对比实例：
+        ewm: 0.038004708010703325
+        pandas_ta: 0.036996500013628975 
 
-        self.SFrame_vwap_down_poc        = ta.rma(slow_poc, length=self.rma_smooth_window)
-        self.SFrame_vwap_down_getin  = ta.rma(slow_poc - self.SFrame_price_std, length=self.rma_smooth_window)
-        self.SFrame_vwap_down_getout = ta.rma(slow_poc + self.SFrame_price_std, length=self.rma_smooth_window)
-        self.SFrame_vwap_down_sl     = ta.rma(slow_poc - 2 * self.SFrame_price_std, length=self.rma_smooth_window)
+        ewm: 0.038044959015678614
+        pandas_ta: 0.03439195899409242
+        '''
+        rma = lambda series: ta.rma(series, length=self.rma_smooth_window)
+        # rma = lambda series: series.ewm(span=self.rma_smooth_window, adjust=False).mean()
+        # 2. SFrame 上下边界及进出场线（用 ta.rma）
+        self.SFrame_vwap_up_poc        = rma(shigh_poc)
+        self.SFrame_vwap_up_getin  = rma(shigh_poc + self.SFrame_price_std)
+        self.SFrame_vwap_up_getout = rma(shigh_poc - self.SFrame_price_std)
+        self.SFrame_vwap_up_sl     = rma(shigh_poc + 2 * self.SFrame_price_std)
+
+        self.SFrame_vwap_down_poc        = rma(slow_poc)
+        self.SFrame_vwap_down_getin  = rma(slow_poc - self.SFrame_price_std)
+        self.SFrame_vwap_down_getout = rma(slow_poc + self.SFrame_price_std)
+        self.SFrame_vwap_down_sl     = rma(slow_poc - 2 * self.SFrame_price_std)
 
         # 3. 计算 HFrame 的价格标准差，并对齐索引
         h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
         self.HFrame_price_std = h_std.reindex(coin_date_df.index) * self.golden_split_factor
 
         # 4. HFrame 上下边界及进出场线（元素级取最大/最小）
-        rma = lambda series: ta.rma(series, length=self.rma_smooth_window)
+        
 
         self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
