@@ -1329,3 +1329,78 @@
 2025-06-08 19:17:35,374 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2513.86878201231, 'price0', 2513.86878201231, datetime.datetime(2025, 6, 8, 19, 17, 24, 147971), 'buyshort')
 2025-06-08 19:18:41,855 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2513.640737710602, 'price0', 2513.640737710602, datetime.datetime(2025, 6, 8, 19, 18, 19, 946498), 'buyshort')
 2025-06-08 19:19:48,712 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2509.4255710217235, 'price0', 2509.4255710217235, datetime.datetime(2025, 6, 8, 19, 19, 26, 627673), 'buyshort')
+2025-06-08 19:23:21,918 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2519.71651513686, 'price0', 2519.71651513686, datetime.datetime(2025, 6, 8, 19, 23, 10, 450913), 'buyshort')
+2025-06-08 19:24:23,281 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2512.5018903522882, 'price0', 2512.5018903522882, datetime.datetime(2025, 6, 8, 19, 24, 1, 216541), 'buyshort')
+2025-06-08 19:25:24,851 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2512.32962862095, 'price0', 2512.32962862095, datetime.datetime(2025, 6, 8, 19, 25, 2, 612282), 'buyshort')
+2025-06-08 19:26:26,351 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2512.1803558958572, 'price0', 2512.1803558958572, datetime.datetime(2025, 6, 8, 19, 26, 4, 134913), 'buyshort')
+2025-06-08 19:27:27,703 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2511.948636439503, 'price0', 2511.948636439503, datetime.datetime(2025, 6, 8, 19, 27, 5, 537463), 'buyshort')
+2025-06-08 19:28:29,290 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2511.676133137121, 'price0', 2511.676133137121, datetime.datetime(2025, 6, 8, 19, 28, 7, 37429), 'buyshort')
+2025-06-08 19:29:30,676 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2511.425269135235, 'price0', 2511.425269135235, datetime.datetime(2025, 6, 8, 19, 29, 8, 484247), 'buyshort')
+2025-06-08 19:30:26,876 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2512.9276559408013, 'price0', 2512.9276559408013, datetime.datetime(2025, 6, 8, 19, 30, 9, 934789), 'buyshort')
+2025-06-08 19:31:15,613 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2514.318513256495, 'price0', 2514.318513256495, datetime.datetime(2025, 6, 8, 19, 30, 49, 241712), 'buyshort')
+2025-06-08 19:32:17,023 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2512.457985551999, 'price0', 2512.457985551999, datetime.datetime(2025, 6, 8, 19, 31, 54, 779630), 'buyshort')
+2025-06-08 19:34:09,041 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2518.153713212299, 'price0', 2518.153713212299, datetime.datetime(2025, 6, 8, 19, 33, 57, 652486), 'buyshort')
+2025-06-08 19:34:53,600 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2518.9174760372975, 'price0', 2518.9174760372975, datetime.datetime(2025, 6, 8, 19, 34, 31, 412813), 'buyshort')
+2025-06-08 19:35:54,559 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2519.8607030333596, 'price0', 2519.8607030333596, datetime.datetime(2025, 6, 8, 19, 35, 32, 426918), 'buyshort')
+2025-06-08 19:36:55,872 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2520.581397177436, 'price0', 2520.581397177436, datetime.datetime(2025, 6, 8, 19, 36, 33, 797930), 'buyshort')
+2025-06-08 19:37:57,740 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2521.1170289952256, 'price0', 2521.1170289952256, datetime.datetime(2025, 6, 8, 19, 37, 35, 477229), 'buyshort')
+2025-06-08 19:38:59,087 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2521.4804663343148, 'price0', 2521.4804663343148, datetime.datetime(2025, 6, 8, 19, 38, 36, 987767), 'buyshort')
+2025-06-08 19:40:00,465 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2521.6877804073206, 'price0', 2521.6877804073206, datetime.datetime(2025, 6, 8, 19, 39, 38, 380497), 'buyshort')
+2025-06-08 19:41:02,000 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2521.761376578316, 'price0', 2521.761376578316, datetime.datetime(2025, 6, 8, 19, 40, 39, 914207), 'buyshort')
+2025-06-08 19:42:03,362 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2516.8482738117905, 'price0', 2516.8482738117905, datetime.datetime(2025, 6, 8, 19, 41, 41, 317791), 'buyshort')
+2025-06-08 19:43:04,718 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2517.313411588945, 'price0', 2517.313411588945, datetime.datetime(2025, 6, 8, 19, 42, 42, 629943), 'buyshort')
+2025-06-08 19:46:32,345 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2524.9249325147584, 'price0', 2524.9249325147584, datetime.datetime(2025, 6, 8, 19, 46, 20, 986520), 'buyshort')
+2025-06-08 19:47:34,055 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2525.131342355178, 'price0', 2525.131342355178, datetime.datetime(2025, 6, 8, 19, 47, 12, 43607), 'buyshort')
+2025-06-08 19:48:35,595 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2519.575545246239, 'price0', 2519.575545246239, datetime.datetime(2025, 6, 8, 19, 48, 13, 456973), 'buyshort')
+2025-06-08 20:32:42,543 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:14:48,348 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:17:12,408 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:18:45,619 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:19:47,208 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:23:01,628 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 21:43:12,902 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:00:19,718 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:19:04,595 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:22:30,635 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:25:04,751 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:28:51,099 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:29:11,851 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:30:26,392 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:31:54,655 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:33:46,477 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:35:18,414 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:36:49,608 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:38:59,800 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:39:33,086 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:40:49,383 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:48:46,026 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:50:08,102 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:57:52,993 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 22:59:54,028 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-08 23:03:37,281 - INFO - Dash is running on http://127.0.0.1:8050/
+

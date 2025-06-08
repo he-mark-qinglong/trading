@@ -7,175 +7,232 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import vwap_calc
 
-class MultiTFvp_poc:  
-    def __init__(self,  
-                 lambd=0.03,  
-                 window_LFrame=12,  
+class WindowConfig:
+    def __init__(self):
+        self.window_tau_l = int(12)
+        self.window_tau_h = self.window_tau_l * 5
+        self.window_tau_s = self.window_tau_h * 5
+
+class MultiTFvp_poc:
+    def __init__(self,
+                 lambd=0.03,
+                 window_LFrame=12,
                  window_HFrame=12*10,
-                 window_SFrame=12*10 * 4,
-  
-                 std_window_LFrame=15):  
-        self.lambd = lambd  
-        self.rma_smooth_window = 9
-        self.window_LFrame = window_LFrame  
-        self.window_HFrame = window_HFrame  
-        self.window_SFrame = window_SFrame
-        self.std_window_LFrame = std_window_LFrame  
+                 window_SFrame=12*10*4,
+                 std_window_LFrame=15):
+        self.lambd               = lambd
+        self.window_LFrame       = window_LFrame
+        self.window_HFrame       = window_HFrame
+        self.window_SFrame       = window_SFrame
+        self.std_window_LFrame   = std_window_LFrame
+        self.rma_smooth_window   = 9
+        self.golden_split_factor = 1.618
 
+        # 原始 OHLCV 全量存储
+        self.df = None
 
-        self.golden_split_factor = 1.618 
+        # 各种结果的全量 Series（索引与 self.df 保持一致）
+        self.LFrame_vp_poc_series = pd.Series(dtype=float)
+        self.HFrame_vp_poc       = pd.Series(dtype=float)
+        self.SFrame_vp_poc       = pd.Series(dtype=float)
+        self.slow_poc            = pd.Series(dtype=float)
+        self.shigh_poc           = pd.Series(dtype=float)
+        self.hlow_poc            = pd.Series(dtype=float)
+        self.hhigh_poc           = pd.Series(dtype=float)
 
-        # 预定义所有结果属性为None  
-        self.LFrame_vp_poc_series = None  
-        self.LFrame_ohlc5_series = None  
-       
+        # 向量化后的一些 Series
+        self.LFrame_ohlc5_series = pd.Series(dtype=float)
+        self.SFrame_price_std    = pd.Series(dtype=float)
+        self.HFrame_price_std    = pd.Series(dtype=float)
 
-        self.SFrame_vp_poc = None  
-        self.HFrame_vp_poc = None  
-        self.HFrame_price_std = None  
+        # 上下轨
+        for attr in [
+            'SFrame_vwap_up_poc','SFrame_vwap_up_getin','SFrame_vwap_up_getout',
+            'SFrame_vwap_up_sl','SFrame_vwap_up_sl2','SFrame_vwap_down_poc',
+            'SFrame_vwap_down_getin','SFrame_vwap_down_getout',
+            'SFrame_vwap_down_sl','SFrame_vwap_down_sl2',
+            'HFrame_vwap_up_poc','HFrame_vwap_up_getin','HFrame_vwap_up_sl',
+            'HFrame_vwap_up_sl2','HFrame_vwap_down_poc','HFrame_vwap_down_getin',
+            'HFrame_vwap_down_sl','HFrame_vwap_down_sl2'
+        ]:
+            setattr(self, attr, pd.Series(dtype=float))
 
-        self.SFrame_vwap_up = None
-        self.SFrame_vwap_up_getin = None
-        self.SFrame_vwap_up_getout = None
+    def _run_heavy(self, df_block, debug=False):
+        """在一段 df_block 上并行计算 vp_poc 和 band，返回带 index 的 Series"""
+        o, c, v = df_block['open'], df_block['close'], df_block['vol']
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            fL = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
+                           o, c, v,
+                           self.window_LFrame, 40, 0.995, 0.99,
+                           debug=debug)
+            fH = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
+                           o, c, v,
+                           self.window_HFrame, 40, 1-0.14, 0.99,
+                           debug=debug)
+            fS = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
+                           o, c, v,
+                           self.window_SFrame, 40, 1-0.07, 0.99,
+                           debug=debug)
+            hvp = fH.result()
+            svp = fS.result()
+            fbH = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
+                            open_prices=o, close_prices=c, vol=v,
+                            length=self.window_HFrame, bins=40,
+                            pct=0.07, decay=0.995, vwap_series=hvp,
+                            debug=debug)
+            fbS = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
+                            open_prices=o, close_prices=c, vol=v,
+                            length=self.window_SFrame, bins=40,
+                            pct=0.07, decay=0.995, vwap_series=svp,
+                            debug=debug)
 
-        self.SFrame_vwap_down = None
-        self.SFrame_vwap_down_getin = None
-        self.SFrame_vwap_down_getout = None
+        idx = df_block.index
+        slow_arr, shigh_arr = fbS.result()
+        hlow_arr,  hhigh_arr = fbH.result()
+        return {
+            'L':     pd.Series(fL.result(),   index=idx),
+            'H':     pd.Series(hvp,           index=idx),
+            'S':     pd.Series(svp,           index=idx),
+            'slow':  pd.Series(slow_arr,      index=idx),
+            'shigh': pd.Series(shigh_arr,     index=idx),
+            'hlow':  pd.Series(hlow_arr,      index=idx),
+            'hhigh': pd.Series(hhigh_arr,     index=idx),
+        }
+
+    def append_df(self, new_df: pd.DataFrame, debug=False):
+        """
+        增量更新：new_df 已保证索引是 DatetimeIndex，
+        只 append 时间戳 > old_last_ts 的那部分结果。
+        """
+        # 1) 记录旧数据最后一个时间戳
+        old_last_ts = None if self.df is None else self.df.index[-1]
+
+        # 2) 合并 self.df 与 new_df，按 index 去重（保 new_df 的新/更新行）
+        old_df = None if self.df is None else self.df.copy()
+        if self.df is None:
+            self.df = new_df.copy()
+        else:
+            tmp     = pd.concat([self.df, new_df])
+            self.df = tmp[~tmp.index.duplicated(keep='last')]
+
+        # 3) 构造 block = overlap 上下文 + new_df
+        overlap = max(self.window_LFrame,
+                      self.window_HFrame,
+                      self.window_SFrame)
+        if old_df is None:
+            block = new_df
+        else:
+            head  = old_df.iloc[-overlap:] if len(old_df) >= overlap else old_df
+            block = pd.concat([head, new_df], axis=0)
+
+        # 4) 在 block 上跑最耗时部分
+        out = self._run_heavy(block, debug=debug)
+
+        # 5) 只取 > old_last_ts 的那段新结果，dropna 再 concat
+        def take_new(old: pd.Series, new: pd.Series) -> pd.Series:
+            if old_last_ts is not None:
+                new = new[new.index > old_last_ts]
+            new = new.dropna()
+            if new.empty:
+                return old
+            return pd.concat([old, new])
+
+        self.LFrame_vp_poc_series = take_new(self.LFrame_vp_poc_series, out['L'])
+        self.HFrame_vp_poc       = take_new(self.HFrame_vp_poc,       out['H'])
+        self.SFrame_vp_poc       = take_new(self.SFrame_vp_poc,       out['S'])
+        self.slow_poc            = take_new(self.slow_poc,            out['slow'])
+        self.shigh_poc           = take_new(self.shigh_poc,           out['shigh'])
+        self.hlow_poc            = take_new(self.hlow_poc,            out['hlow'])
+        self.hhigh_poc           = take_new(self.hhigh_poc,           out['hhigh'])
+
+        # 6) 向量化后续计算
+        self._run_vectorized()
         
-        self.SFrame_vwap_down_sl = None
-        self.SFrame_vwap_up_sl = None
-    
-    def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
-        open_  = coin_date_df['open']
-        high   = coin_date_df['high']
-        low    = coin_date_df['low']
-        close  = coin_date_df['close']
-        vol    = coin_date_df['vol']
+        return self.df
 
-        # 并行执行 LFrame 和 SFrame 的中心 VWAP 计算
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_L = executor.submit(
-                vwap_calc.vpvr_center_vwap_log_decay,
-                open_, close, vol,
-                self.window_LFrame, 40, 0.995, 0.99,
-                debug=debug,
-            )
-            future_H = executor.submit(
-                vwap_calc.vpvr_center_vwap_log_decay,
-                open_, close, vol,
-                self.window_HFrame, 40, 1 - (0.07 * 2), 0.99,
-                debug=debug,
-            )
-            future_S = executor.submit(
-                vwap_calc.vpvr_center_vwap_log_decay,
-                open_, close, vol,
-                self.window_SFrame, 40, 1 - (0.07 * 1), 0.99,
-                debug=debug,
-            )
+    def _run_vectorized(self):
+        df    = self.df
+        close = df['close']
 
-            hframe_vp = future_H.result()
+        # 1) OHLC5
+        self.LFrame_ohlc5_series = pd.Series(close.values, index=close.index)
 
-            # 等待 SFrame 完成后再启动 Band 计算
-            sframe_vp = future_S.result()
-            sfuture_band = executor.submit(
-                vwap_calc.vpvr_pct_band_vwap_log_decay,
-                open_prices=open_,
-                close_prices=close,
-                vol=vol,
-                length=self.window_SFrame,
-                bins=40,
-                pct=0.07,
-                decay=0.995,
-                vwap_series=sframe_vp,
-                debug=debug,
-            )
-            hfuture_band = executor.submit(
-                vwap_calc.vpvr_pct_band_vwap_log_decay,
-                open_prices=open_,
-                close_prices=close,
-                vol=vol,
-                length=self.window_HFrame,
-                bins=40,
-                pct=0.07,
-                decay=0.995,
-                vwap_series=hframe_vp,
-                debug=debug,
-            )
+        # 2) RMA 平滑
+        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc,
+                                    length=self.rma_smooth_window)
 
-            # 取回结果
-            self.LFrame_vp_poc_series = future_L.result()
-            self.SFrame_vp_poc       = sframe_vp
-            self.HFrame_vp_poc       = hframe_vp
-            slow_poc, shigh_poc       = sfuture_band.result()
-            hlow_poc, hhigh_poc       = hfuture_band.result()
+        # 3) swing 用于 std
+        def swing(vp_poc):
+            d_high = np.maximum(close - vp_poc, 0)
+            dh_max = d_high.rolling(240).max().abs()
+            d_low  = np.minimum(close - vp_poc, 0)
+            dl_min = d_low.rolling(240).min().abs()
+            return np.maximum(dh_max, dl_min)
 
-        # 以下全为向量化运算
-        self.LFrame_ohlc5_series = pd.Series(close.values, index=coin_date_df.index)
+        H_swing = swing(self.HFrame_vp_poc)
+        S_swing = swing(self.SFrame_vp_poc)
 
-        # 对 SFrame_vp_poc 做 RMA 平滑
-        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc, length=self.rma_smooth_window)
-
-        # 计算 HFrame 的最大摆幅
-        delta_high = np.maximum(close - self.HFrame_vp_poc, 0)
-        max_delta_high = delta_high.rolling(240).max().abs()
-        delta_low  = np.minimum(close - self.HFrame_vp_poc, 0)
-        min_delta_low = delta_low.rolling(240).min().abs()
-        HFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
-        
-        # 计算 SFrame 的最大摆幅
-        delta_high = np.maximum(close - self.SFrame_vp_poc, 0)
-        max_delta_high = delta_high.rolling(240).max().abs()
-        delta_low  = np.minimum(close - self.SFrame_vp_poc, 0)
-        min_delta_low = delta_low.rolling(240).min().abs()
-        SFrame_max_swing = np.maximum(max_delta_high, min_delta_low)
-
-        # 1. 计算 SFrame 的价格标准差
-        # HFrame 的价格标准差
+        # 4) 价格 std
         self.SFrame_price_std = (
-            close.rolling(self.window_HFrame).std() * 0.9
-            + SFrame_max_swing * 0.1
+            close.rolling(self.window_SFrame).std() * 0.9
+            + S_swing * 0.1
         ) * self.golden_split_factor
-        self.SFrame_price_std.index = coin_date_df.index
-        '''
-        性能对比实例：
-        ewm: 0.038004708010703325
-        pandas_ta: 0.036996500013628975 
 
-        ewm: 0.038044959015678614
-        pandas_ta: 0.03439195899409242
-        '''
-        rma = lambda series: ta.rma(series, length=self.rma_smooth_window)
-        # rma = lambda series: series.ewm(span=self.rma_smooth_window, adjust=False).mean()
-        # 2. SFrame 上下边界及进出场线（用 ta.rma）
-        self.SFrame_vwap_up_poc        = rma(shigh_poc)
-        self.SFrame_vwap_up_getin  = rma(shigh_poc + self.SFrame_price_std)
-        self.SFrame_vwap_up_getout = rma(shigh_poc - self.SFrame_price_std)
-        self.SFrame_vwap_up_sl     = rma(shigh_poc + 2 * self.SFrame_price_std)
-        self.SFrame_vwap_up_sl2     = rma(shigh_poc + 4 * self.SFrame_price_std)
+        h_std = (
+            close.rolling(self.window_HFrame).std() * 0.9
+            + H_swing * 0.1
+        ) * self.golden_split_factor
+        self.HFrame_price_std = pd.Series(h_std.values, index=close.index)
 
-        self.SFrame_vwap_down_poc        = rma(slow_poc)
-        self.SFrame_vwap_down_getin  = rma(slow_poc - self.SFrame_price_std)
-        self.SFrame_vwap_down_getout = rma(slow_poc + self.SFrame_price_std)
-        self.SFrame_vwap_down_sl     = rma(slow_poc - 2 * self.SFrame_price_std)
-        self.SFrame_vwap_down_sl2     = rma(slow_poc - 4 * self.SFrame_price_std)
+        # 5) 计算上下轨（RMA + max/min 合并逻辑）
+        rma = lambda s: ta.rma(s, length=self.rma_smooth_window)
+        slow, shigh = self.slow_poc, self.shigh_poc
+        hlow, hhigh = self.hlow_poc, self.hhigh_poc
 
-        # 3. 计算 HFrame 的价格标准差，并对齐索引
-        h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
-        self.HFrame_price_std = h_std.reindex(coin_date_df.index) * self.golden_split_factor
+        # SFrame
+        self.SFrame_vwap_up_poc    = rma(shigh)
+        self.SFrame_vwap_up_getin  = rma(shigh + self.SFrame_price_std)
+        self.SFrame_vwap_up_getout = rma(shigh - self.SFrame_price_std)
+        self.SFrame_vwap_up_sl     = rma(shigh + 2*self.SFrame_price_std)
+        self.SFrame_vwap_up_sl2    = rma(shigh + 4*self.SFrame_price_std)
 
-        # 4. HFrame 上下边界及进出场线（元素级取最大/最小）
-        
+        self.SFrame_vwap_down_poc    = rma(slow)
+        self.SFrame_vwap_down_getin  = rma(slow - self.SFrame_price_std)
+        self.SFrame_vwap_down_getout = rma(slow + self.SFrame_price_std)
+        self.SFrame_vwap_down_sl     = rma(slow - 2*self.SFrame_price_std)
+        self.SFrame_vwap_down_sl2    = rma(slow - 4*self.SFrame_price_std)
 
-        self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
-        self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
-        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,    rma(hhigh_poc + 2 * self.HFrame_price_std))
-        self.HFrame_vwap_up_sl2     = np.maximum(self.SFrame_vwap_up_sl2,    rma(hhigh_poc + 4 * self.HFrame_price_std))
+        # HFrame（取更保守的 max/min）
+        self.HFrame_vwap_up_poc    = np.maximum(self.SFrame_vwap_up_getin,
+                                                rma(hhigh))
+        self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,
+                                                rma(hhigh + self.HFrame_price_std))
+        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,
+                                                rma(hhigh + 2*self.HFrame_price_std))
+        self.HFrame_vwap_up_sl2    = np.maximum(self.SFrame_vwap_up_sl2,
+                                                rma(hhigh + 4*self.HFrame_price_std))
 
-        self.HFrame_vwap_down_poc        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
-        self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - self.HFrame_price_std))
-        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,  rma(hlow_poc - 2 * self.HFrame_price_std))
-        self.HFrame_vwap_down_sl2     = np.minimum(self.SFrame_vwap_down_sl2,  rma(hlow_poc - 4 * self.HFrame_price_std))
-        
+        self.HFrame_vwap_down_poc    = np.minimum(self.SFrame_vwap_down_getin,
+                                                  rma(hlow))
+        self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,
+                                                  rma(hlow - self.HFrame_price_std))
+        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,
+                                                  rma(hlow - 2*self.HFrame_price_std))
+        self.HFrame_vwap_down_sl2    = np.minimum(self.SFrame_vwap_down_sl2,
+                                                  rma(hlow - 4*self.HFrame_price_std))
+
+    def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
+        """
+        旧接口兼容：清空后全量跑一次。
+        """
+        self.df = None
+        for attr in [
+            'LFrame_vp_poc_series','HFrame_vp_poc','SFrame_vp_poc',
+            'slow_poc','shigh_poc','hlow_poc','hhigh_poc'
+        ]:
+            setattr(self, attr, pd.Series(dtype=float))
+        self.append_df(coin_date_df, debug=debug)
+
 import os
 import time
 import matplotlib  

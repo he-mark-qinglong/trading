@@ -20,17 +20,41 @@ from db_client import SQLiteWALClient
 BASIC_INTERVAL = 5
 use4x = True
 symbol = "ETH-USDT-SWAP"
-LIMIT_K_N = 310 + 700 #+ 1000
+
+DEBUG= True
+DEBUG = False
 
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_4x" if use4x else "ohlcv")
 
 trade_client = None
 
-window_tau_l = int(12) 
-window_tau_h = window_tau_l * 5
-window_tau_s = window_tau_h * 5
-multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
+windowConfig = LHFrameStd.WindowConfig()
+multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 
+                                     window_HFrame=windowConfig.window_tau_h,
+                                     window_SFrame=windowConfig.window_tau_s)
+
+
+LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
+LIMIT_K_N = 1700 + LIMIT_K_N_APPEND #+ 1000
+
+
+def read_and_sort_df(is_append=True):
+    df = client.read_df(limit=LIMIT_K_N_APPEND if is_append else LIMIT_K_N, order_by="ts DESC")
+
+    # 2. 检查必须列
+    required = {"ts","open","high","low","close","vol"}
+    if not required.issubset(df.columns):
+        miss = required - set(df.columns)
+    # 3. 转换时间
+    df["ts"] = df["ts"].astype(int)
+    df = df.drop_duplicates("ts").sort_values("ts")
+    df["datetime"] = pd.to_datetime(df["ts"], unit="s")
+    df = df.set_index("ts", drop=True)
+
+    # 6) 保证数据是连续、升序的
+    df = df.sort_index()
+    return df
 
 app = Dash(__name__)
 app.layout = html.Div([
@@ -76,35 +100,11 @@ vars_to_plot = list(colors.keys())
 )
 def update_graph(n):
     try:
-        # 1. 从 SQLite 读最新 2000 条
-        try:
-            # 先拿最新 2000 条（倒序）
-            df = client.read_df(limit=LIMIT_K_N, order_by="ts DESC")
-            if df.empty:
-                return go.Figure(), "暂无数据"
-
-            # 再正序排列
-            df = df.sort_values("ts", ascending=True)
-        except Exception as e:
-            return go.Figure(), f"读取数据库错误：{e}"
-        if df.empty:
-            return go.Figure(), "暂无数据"
-
-        # 2. 检查必须列
-        required = {"ts","open","high","low","close","vol"}
-        if not required.issubset(df.columns):
-            miss = required - set(df.columns)
-            return go.Figure(), f"CSV 缺失列: {miss}"
-
-        # 3. 转换时间
-        df["ts"] = df["ts"].astype(int)
-        df = df.drop_duplicates("ts").sort_values("ts")
-        df["datetime"] = pd.to_datetime(df["ts"], unit="s")
-
+        df = read_and_sort_df()
         # 4. 计算所有 vp_poc / VWAP / STD 系列
         before_cal = time.time()
         
-        multiVwap.calculate_SFrame_vp_poc_and_std(df)
+        df = multiVwap.append_df(df, DEBUG)
         after_calc = time.time()
         print(f'{"4x" if use4x else "1x"}time consumed:{after_calc - before_cal}')
 
@@ -261,4 +261,9 @@ def on_close(submit_n, disabled):
     return status, True
 
 if __name__ == '__main__':
+    df = read_and_sort_df(is_append=False)
+    
+    multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
+
+
     app.run(debug=True, port=8050 if use4x else 8051)

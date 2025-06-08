@@ -35,9 +35,9 @@ class RuleConfig:
             price_attr="SFrame_vwap_down_sl2",
             compare=lambda c, t: c < t,
             amount=2,
-            consec_attr="SFrame_vwap_down_sl",
+            consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=1
+            consec_count=2
         ),
         EntryTier(
             name="neutral",
@@ -66,13 +66,13 @@ class RuleConfig:
             price_attr="SFrame_vwap_up_sl2",
             compare=lambda c, t: c > t,
             amount=2,
-            consec_attr="HFrame_vwap_up_sl",
+            consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
-            consec_count=1
+            consec_count=2
         ),
         EntryTier(
             name="neutral",
-            price_attr="HFrame_vwap_up_sl",
+            price_attr="SFrame_vwap_up_sl",
             compare=lambda c, t: c > t,
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
@@ -129,7 +129,7 @@ class MultiFramePOCStrategy:
         if self._has_order[side]:
             # 外部会继续调用 should_cancel 判断是否超时
             return None
-        if len(record_buy_total) >= 20:
+        if record_buy_total >= 20:
             return None  #最多开20个订单，以免爆仓。
         
         rule   = self.long_rule if side == "long" else self.short_rule
