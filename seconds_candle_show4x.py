@@ -17,10 +17,10 @@ from db_client import SQLiteWALClient
 
 
 
-basic_time_interval = 5
+BASIC_INTERVAL = 5
 use4x = True
 symbol = "ETH-USDT-SWAP"
-LIMIT_K_N = 600
+LIMIT_K_N = 310 + 700 #+ 1000
 
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_4x" if use4x else "ohlcv")
@@ -34,7 +34,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=w
 
 app = Dash(__name__)
 app.layout = html.Div([
-    html.H2(f"OKX {4*basic_time_interval if use4x else basic_time_interval}s K-line OHLCV (Auto-refresh)"),
+    html.H2(f"OKX {4*BASIC_INTERVAL if use4x else BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
     dcc.ConfirmDialogProvider(
         children=html.Button("一键平仓", id="btn-close", n_clicks=0),
         id="confirm-close",
@@ -42,7 +42,7 @@ app.layout = html.Div([
     ),
     html.Div(id="close-status", style={"marginTop": "5px", "color": "green"}),
     dcc.Graph(id="kline-graph"),
-    dcc.Interval(id='interval', interval=(4 * basic_time_interval if use4x else basic_time_interval)*1000, n_intervals=0),
+    dcc.Interval(id='interval', interval=(4 * BASIC_INTERVAL if use4x else BASIC_INTERVAL)*1000, n_intervals=0),
     html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
 ])
 
@@ -61,9 +61,11 @@ colors = {
     # 'HFrame_vwap_up_poc':          'magenta',
     'HFrame_vwap_up_getin':    'deeppink',
     'HFrame_vwap_up_sl':       'orangered',
+    'HFrame_vwap_up_sl2':       'orangered',
     # 'HFrame_vwap_down_poc':        'teal',
     'HFrame_vwap_down_getin':  'turquoise',
     'HFrame_vwap_down_sl':     'darkslategray',
+    'HFrame_vwap_down_sl2':     'darkslategray',
 }
 vars_to_plot = list(colors.keys())
 
@@ -107,7 +109,7 @@ def update_graph(n):
         print(f'{"4x" if use4x else "1x"}time consumed:{after_calc - before_cal}')
 
         # 5. 找到第一个非 NaN 的 HFrame 下轨止损线索引，同步截断
-        start = multiVwap.HFrame_vwap_down_sl.first_valid_index()
+        start = multiVwap.SFrame_vp_poc.first_valid_index()
         if start is not None:
             df = df.loc[start:].copy()
             for var in vars_to_plot:
@@ -129,7 +131,7 @@ def update_graph(n):
             x=df["datetime"],
             open=df["open"], high=df["high"],
             low=df["low"], close=df["close"],
-            name=f"{4*basic_time_interval if use4x else basic_time_interval}s-K"
+            name=f"{4*BASIC_INTERVAL if use4x else BASIC_INTERVAL}s-K"
         ), row=1, col=1)
 
         # 8. 添加所有 vp_poc/VWAP 系列

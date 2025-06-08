@@ -151,11 +151,13 @@ class MultiTFvp_poc:
         self.SFrame_vwap_up_getin  = rma(shigh_poc + self.SFrame_price_std)
         self.SFrame_vwap_up_getout = rma(shigh_poc - self.SFrame_price_std)
         self.SFrame_vwap_up_sl     = rma(shigh_poc + 2 * self.SFrame_price_std)
+        self.SFrame_vwap_up_sl2     = rma(shigh_poc + 4 * self.SFrame_price_std)
 
         self.SFrame_vwap_down_poc        = rma(slow_poc)
         self.SFrame_vwap_down_getin  = rma(slow_poc - self.SFrame_price_std)
         self.SFrame_vwap_down_getout = rma(slow_poc + self.SFrame_price_std)
         self.SFrame_vwap_down_sl     = rma(slow_poc - 2 * self.SFrame_price_std)
+        self.SFrame_vwap_down_sl2     = rma(slow_poc - 4 * self.SFrame_price_std)
 
         # 3. 计算 HFrame 的价格标准差，并对齐索引
         h_std = close.rolling(self.window_HFrame).std() * 0.9 + HFrame_max_swing * 0.1
@@ -167,10 +169,12 @@ class MultiTFvp_poc:
         self.HFrame_vwap_up_poc        = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,    rma(hhigh_poc + self.HFrame_price_std))
         self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,    rma(hhigh_poc + 2 * self.HFrame_price_std))
+        self.HFrame_vwap_up_sl2     = np.maximum(self.SFrame_vwap_up_sl2,    rma(hhigh_poc + 4 * self.HFrame_price_std))
 
         self.HFrame_vwap_down_poc        = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc))
         self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,  rma(hlow_poc - self.HFrame_price_std))
         self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,  rma(hlow_poc - 2 * self.HFrame_price_std))
+        self.HFrame_vwap_down_sl2     = np.minimum(self.SFrame_vwap_down_sl2,  rma(hlow_poc - 4 * self.HFrame_price_std))
         
 import os
 import time
@@ -200,8 +204,10 @@ def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading=False, save
         'SFrame_vwap_down_sl':      'seagreen',
         'HFrame_vwap_up_getin':     'deeppink',
         'HFrame_vwap_up_sl':        'orangered',
+        'HFrame_vwap_up_sl2':        'orangered',
         'HFrame_vwap_down_getin':   'turquoise',
         'HFrame_vwap_down_sl':      'darkslategray',
+        'HFrame_vwap_down_sl2':      'darkslategray',
     }
     vars_to_plot = list(colors.keys())
 

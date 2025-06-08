@@ -32,12 +32,21 @@ class RuleConfig:
     long_rule = EntryRule([
         EntryTier(
             name="conservative",
+            price_attr="SFrame_vwap_down_sl2",
+            compare=lambda c, t: c < t,
+            amount=2,
+            consec_attr="SFrame_vwap_down_sl",
+            consec_compare="below",
+            consec_count=1
+        ),
+        EntryTier(
+            name="neutral",
             price_attr="SFrame_vwap_down_sl",
             compare=lambda c, t: c < t,
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=1
+            consec_count=2
         ),
         EntryTier(
             name="aggressive",
@@ -54,12 +63,21 @@ class RuleConfig:
     short_rule = EntryRule([
         EntryTier(
             name="conservative",
+            price_attr="SFrame_vwap_up_sl2",
+            compare=lambda c, t: c > t,
+            amount=2,
+            consec_attr="HFrame_vwap_up_sl",
+            consec_compare="above",
+            consec_count=1
+        ),
+        EntryTier(
+            name="neutral",
             price_attr="HFrame_vwap_up_sl",
             compare=lambda c, t: c > t,
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
-            consec_count=1
+            consec_count=2
         ),
         EntryTier(
             name="aggressive",
@@ -159,10 +177,21 @@ class MultiFramePOCStrategy:
         return None
 
     def should_cancel(self, side: str) -> bool:
-        """如果已有挂单且超时，返回 True"""
+        """已有挂单且超时，就撤单。"""
         if not self._has_order[side]:
             return False
-        return (time.time() - (self._order_time[side] or 0)) >= self.timeout
+
+        ts = self._order_time[side]
+        if ts is None:
+            # 如果意外没记时间，可选地当“肯定要撤”
+            return True
+
+        # 超时就撤，并重置时间戳
+        if time.time() - ts >= self.timeout:
+            self._order_time[side] = time.time()  # 如果要继续监控，再重置
+            return True
+
+        return False
 
     def clear_order(self, side: str):
         """外部撤单或成交回报时调用，清除挂单状态"""
