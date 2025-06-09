@@ -8,7 +8,7 @@ import numpy as np
 class EntryTier:
     name: str
     price_attr: str                         # e.g. "SFrame_vwap_down_sl"
-    compare: Callable[[float, float], bool] # lambda cur, thresh: cur < thresh or >
+    # compare: Callable[[float, float], bool] # lambda cur, thresh: cur < thresh or >
     amount: int                             # 挂单手数
     consec_attr: Optional[str]              # e.g. "SFrame_vwap_down_poc"
     consec_compare: Optional[str]           # "above" 或 "below"
@@ -26,6 +26,7 @@ class OrderSignal:
     amount:     int                         # 挂单手数
     order_type: str                         # "limit"
     order_time: float                       # 发单时间戳
+    tier_explain: EntryTier                 # 明确解释开仓的原因
 class RuleConfig:
     #注意：conservative应该要在前面，因为后续循环索引规则的时候需要先判断突破次数多的情况，
     #     如果顺序是aggressive在前面，conservative可能会因为consec_count更大而一直被aggressive的规则给提前判断return,而无法被循环遍历到。
@@ -33,7 +34,6 @@ class RuleConfig:
         EntryTier(
             name="conservative",
             price_attr="SFrame_vwap_down_sl2",
-            compare=lambda c, t: c < t,
             amount=2,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
@@ -42,7 +42,6 @@ class RuleConfig:
         EntryTier(
             name="neutral",
             price_attr="SFrame_vwap_down_sl",
-            compare=lambda c, t: c < t,
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
@@ -51,11 +50,19 @@ class RuleConfig:
         EntryTier(
             name="aggressive",
             price_attr="HFrame_vwap_down_getin",
-            compare=lambda c, t: c < t,
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=8
+            consec_count=5
+        ),
+
+        EntryTier(
+            name="aggressive",
+            price_attr="SFrame_vwap_down_poc",
+            amount=1,
+            consec_attr="SFrame_vwap_down_poc",
+            consec_compare="below",
+            consec_count=10
         ),
         
     ])
@@ -64,7 +71,6 @@ class RuleConfig:
         EntryTier(
             name="conservative",
             price_attr="SFrame_vwap_up_sl2",
-            compare=lambda c, t: c > t,
             amount=2,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
@@ -73,7 +79,6 @@ class RuleConfig:
         EntryTier(
             name="neutral",
             price_attr="SFrame_vwap_up_sl",
-            compare=lambda c, t: c > t,
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
@@ -82,14 +87,20 @@ class RuleConfig:
         EntryTier(
             name="aggressive",
             price_attr="HFrame_vwap_up_getin",
-            compare=lambda c, t: c > t,
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
-            consec_count=8
+            consec_count=5
         ),
         
-        
+        EntryTier(
+            name="aggressive",
+            price_attr="SFrame_vwap_up_poc",
+            amount=1,
+            consec_attr="SFrame_vwap_up_poc",
+            consec_compare="above",
+            consec_count=10
+        ),
     ])
 
 class MultiFramePOCStrategy:
@@ -154,9 +165,9 @@ class MultiFramePOCStrategy:
 
             # (2) 价格触及
             if tier.consec_compare == "above":
-                price_t = np.max(getattr(data_src, tier.price_attr).iloc[-20])
+                price_t = np.max(getattr(data_src, tier.price_attr).iloc[-20:])
             else:
-                price_t = np.min(getattr(data_src, tier.price_attr).iloc[-20])
+                price_t = np.min(getattr(data_src, tier.price_attr).iloc[-20:])
             # if not tier.compare(cur_close, price_t):
             #     continue
 
@@ -170,7 +181,8 @@ class MultiFramePOCStrategy:
                 price=price_t,
                 amount=tier.amount,
                 order_type="limit",
-                order_time=now
+                order_time=now,
+                tier_explain=tier
             )
 
         # 没触发

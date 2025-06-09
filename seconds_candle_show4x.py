@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 1700 + LIMIT_K_N_APPEND #+ 1000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND #+ 1000
 
 
 def read_and_sort_df(is_append=True):
@@ -100,11 +100,14 @@ vars_to_plot = list(colors.keys())
 )
 def update_graph(n):
     try:
-        df = read_and_sort_df()
+        # df = read_and_sort_df(init=False)
+        df = read_and_sort_df(is_append=False)
+    
+    
         # 4. 计算所有 vp_poc / VWAP / STD 系列
         before_cal = time.time()
-        
-        df = multiVwap.append_df(df, DEBUG)
+        multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
+        # df = multiVwap.append_df(df, DEBUG)
         after_calc = time.time()
         print(f'{"4x" if use4x else "1x"}time consumed:{after_calc - before_cal}')
 
