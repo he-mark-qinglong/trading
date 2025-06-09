@@ -99,3 +99,70 @@ class SQLiteWALClient:
         df = pd.read_sql(sql, conn)
         conn.close()
         return df
+    
+
+def drop_orderbook_snap(db_path: str, table: str = "orderbook_snap") -> None:
+    """
+    连接到 db_path，对 table 执行 DROP TABLE IF EXISTS。
+    """
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        with conn:
+            conn.execute(f"DROP TABLE IF EXISTS {table};")
+        print(f"Table `{table}` dropped (if it existed).")
+    finally:
+        conn.close()
+        
+class OrderbookWALClient(SQLiteWALClient):
+    """
+    专门存 orderbook_snap 的 client，自动建表或增量迁移新列。
+    """
+    def __init__(self,
+                 db_path: str,
+                 table: str = "orderbook_snap",
+                 primary_key: str = "ts",
+                 top_n: int = 5):
+        super().__init__(db_path)
+        self.table = table
+        self.pk    = primary_key
+        self.top_n = top_n
+
+        # expected columns
+        exp = ["ts"]
+        exp += [f"bid{i}" for i in range(1, top_n+1)]
+        exp += [f"ask{i}" for i in range(1, top_n+1)]
+        exp += ["sum_bid","sum_ask","obpi"]
+
+        conn = self._connect()
+        with conn:
+            # 1) 如果表不存在，创建全表
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (self.table,)
+            ).fetchone()
+            if not exists:
+                cols_ddl = [ "ts INTEGER PRIMARY KEY" ] + [f"{c} REAL" for c in exp if c!="ts"]
+                sql = f"CREATE TABLE {self.table} (\n  " + ",\n  ".join(cols_ddl) + "\n);"
+                conn.execute(sql)
+            else:
+                # 2) 表已存在，检查缺失列并逐个添加
+                existing = [r[1] for r in conn.execute(f"PRAGMA table_info({self.table});")]
+                for c in exp:
+                    if c not in existing:
+                        conn.execute(f"ALTER TABLE {self.table} ADD COLUMN {c} REAL;")
+        conn.close()
+
+    def append(self, df: pd.DataFrame):
+        self.append_df_ignore(df, self.table, self.pk)
+
+    def read_df(self,
+                cols: Optional[str] = "*",
+                limit: Optional[int] = None,
+                order_by: str = "ts ASC") -> pd.DataFrame:
+        sql = f"SELECT {cols} FROM {self.table}"
+        if order_by:  sql += f" ORDER BY {order_by}"
+        if limit:     sql += f" LIMIT {limit}"
+        conn = self._connect()
+        df   = pd.read_sql(sql, conn)
+        conn.close()
+        return df

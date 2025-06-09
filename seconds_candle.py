@@ -25,7 +25,8 @@ async def _collect_trades_and_save_once(symbol="BTC-USDT-SWAP", interval=4):
     async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
         await ws.send(json.dumps({
             "op": "subscribe",
-            "args": [{"channel": "trades", "instId": symbol}]
+            "args": [{"channel": "trades", "instId": symbol},
+                     {"channel": "books", "instId": symbol}]
         }))
         cache = []               # 缓存原始 trade
         interval_start = int(time.time())
@@ -50,6 +51,8 @@ async def _collect_trades_and_save_once(symbol="BTC-USDT-SWAP", interval=4):
                         "price": float(t["px"]),
                         "size":  float(t["sz"])
                     })
+            else:
+                print(data)
 
             # 2. 达到一个 interval，计算 1×interval OHLCV
             now = int(time.time())
