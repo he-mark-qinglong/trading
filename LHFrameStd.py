@@ -147,7 +147,7 @@ class MultiTFvp_poc:
 
         # 6) 向量化后续计算
         self._run_vectorized()
-        
+
         return self.df
 
     def _run_vectorized(self):
@@ -238,139 +238,120 @@ import time
 import matplotlib  
 matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime
 
+def plot_all_multiftfpoc_vars(multFramevp_poc,
+                              symbol='',
+                              is_trading=False,
+                              save_to_file=True):
+    # —— 开头：确保所有 index 都是 DatetimeIndex —— 
+    df = getattr(multFramevp_poc, 'df', None)
+    if isinstance(df, pd.DataFrame):
+        # 如果没有 datetime 列，就把原 ts 索引（int 秒）转换
+        if not isinstance(df.index, pd.DatetimeIndex):
+            # 假设原 index 是 unix timestamp (s)
+            df = df.copy()
+            df.index = pd.to_datetime(df.index.astype(int), unit='s')
+        # 如果你还有单独的 datetime 列，也可以更新一下
+        if 'datetime' in df.columns:
+            df['datetime'] = pd.to_datetime(df['datetime'])
+        multFramevp_poc.df = df
 
-def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading=False, save_to_file=True):
-    import matplotlib.dates as mdates
-    from datetime import datetime
+    # 其它 series 也同理
+    vars_to_plot = [
+      'LFrame_vp_poc_series','SFrame_vp_poc', 'SFrame_vwap_up_poc',
+      'SFrame_vwap_up_sl','SFrame_vwap_down_poc','SFrame_vwap_down_sl',
+      'HFrame_vwap_up_getin','HFrame_vwap_up_sl','HFrame_vwap_up_sl2',
+      'HFrame_vwap_down_getin','HFrame_vwap_down_sl','HFrame_vwap_down_sl2',
+    ]
+    for var in vars_to_plot:
+        s = getattr(multFramevp_poc, var, None)
+        if isinstance(s, pd.Series) and not isinstance(s.index, pd.DatetimeIndex):
+            setattr(multFramevp_poc, var, 
+                    pd.Series(s.values,
+                              index=pd.to_datetime(s.index.astype(int), unit='s'),
+                              name=s.name))
 
-    fig, (ax_k, ax_vol) = plt.subplots(2, 1, figsize=(15, 8), sharex=True,
-                                       gridspec_kw={'height_ratios': [7, 3]},
-                                       constrained_layout=True)
+    # ———— 开始画图 ————
+    fig, (ax_k, ax_vol) = plt.subplots(
+        2,1, figsize=(15,8), sharex=True,
+        gridspec_kw={'height_ratios':[7,3]},
+        constrained_layout=True
+    )
     fig.patch.set_facecolor('black')
     ax_k.set_facecolor('black')
     ax_vol.set_facecolor('black')
 
-    # 颜色与变量名列表——和 Dash 一致
-    colors = {
-        'LFrame_vp_poc_series':     'yellow',
-        'SFrame_vp_poc':            'purple',
-        'SFrame_vwap_up_poc':       'red',
-        'SFrame_vwap_up_sl':        'firebrick',
-        'SFrame_vwap_down_poc':     'blue',
-        'SFrame_vwap_down_sl':      'seagreen',
-        'HFrame_vwap_up_getin':     'deeppink',
-        'HFrame_vwap_up_sl':        'orangered',
-        'HFrame_vwap_up_sl2':        'orangered',
-        'HFrame_vwap_down_getin':   'turquoise',
-        'HFrame_vwap_down_sl':      'darkslategray',
-        'HFrame_vwap_down_sl2':      'darkslategray',
-    }
-    vars_to_plot = list(colors.keys())
-
-    # === 参考DASH裁剪法：找SFrame_vwap_up_poc第一个有效点 ===
-    base_var = 'SFrame_vwap_up_poc'
-    base_series = getattr(multFramevp_poc, base_var, None)
-    start = None
-    if isinstance(base_series, (pd.Series, np.ndarray)) and hasattr(base_series, "first_valid_index"):
-        start = base_series.first_valid_index()
-
-    # 主 DataFrame
-    df = getattr(multFramevp_poc, 'df', None)
-    if start is not None:
-        # DataFrame裁剪
-        if isinstance(df, pd.DataFrame) and start in df.index:
-            df = df.loc[start:].copy()
-        # 所有序列统一loc[start:]，完全和Dash那段一样
-        for var in vars_to_plot + ["HFrame_vwap_up_getin", "HFrame_vwap_up_sl", "HFrame_vwap_down_sl", "HFrame_vwap_down_getin"]:
-            s = getattr(multFramevp_poc, var, None)
-            if isinstance(s, pd.Series) and start in s.index:
-                setattr(multFramevp_poc, var, s.loc[start:])
-
-    # X轴时间
-    datetime_index = None
-    if df is not None and 'datetime' in df.columns:
-        datetime_index = df['datetime']
-    else:
-        for var in vars_to_plot:
-            s = getattr(multFramevp_poc, var, None)
-            if isinstance(s, pd.Series):
-                datetime_index = s.index
-                break
-
-    # ---主K线/close---
-    if df is not None and set(['open', 'high', 'low', 'close']).issubset(df.columns):
+    # 1) K 线 / close
+    if isinstance(df, pd.DataFrame) and {'open','high','low','close'}.issubset(df.columns):
+        times = mdates.date2num(df.index.to_pydatetime())
         o,h,l,c = df['open'].values, df['high'].values, df['low'].values, df['close'].values
-        times = datetime_index if datetime_index is not None else df.index
+        quotes = np.column_stack([times, o, h, l, c])
         try:
             from mplfinance.original_flavor import candlestick_ohlc
-            quotes = np.column_stack([mdates.date2num(times), o,h,l,c])
-            candlestick_ohlc(ax_k, quotes, width=0.0015, colorup='lime', colordown='red', alpha=0.7)
+            candlestick_ohlc(
+                ax_k, quotes,
+                width=(df.index[1]-df.index[0]).seconds/86400*0.8,
+                colorup='lime', colordown='red', alpha=0.7
+            )
         except ImportError:
-            ax_k.plot(times, c, color='white', label='Close', linewidth=1)
-
-    elif datetime_index is not None:
-        for var in ['LFrame_ohlc5_series', 'close']:
-            cval = getattr(multFramevp_poc, var, None)
-            if isinstance(cval, pd.Series):
-                ax_k.plot(cval.index, cval.values, color='lightgray', linewidth=1, label=var)
+            ax_k.plot(df.index, c, color='white', label='Close', linewidth=1)
+    else:
+        # fallback
+        for var in ['LFrame_ohlc5_series','close']:
+            s = getattr(multFramevp_poc, var, None)
+            if isinstance(s, pd.Series):
+                ax_k.plot(s.index, s.values,
+                          color='lightgray', linewidth=1, label=var)
                 break
 
-    # ---所有系列线---
+    # 2) 其它 series
+    colors = { # … 同上略 …
+        'LFrame_vp_poc_series':'yellow','SFrame_vp_poc':'purple',
+        # …
+    }
     for var in vars_to_plot:
-        series = getattr(multFramevp_poc, var, None)
-        if not isinstance(series, pd.Series) or series.isna().all():
-            continue
-        ax_k.plot(series.index, series.values,
-                  label=var, color=colors.get(var, 'white'),
-                  linewidth=2 if 'HFrame' not in var else 1,
-                  linestyle='-' if '_poc' in var else 'dotted')
+        s = getattr(multFramevp_poc, var, None)
+        if isinstance(s, pd.Series) and not s.isna().all():
+            ax_k.plot(
+                s.index, s.values,
+                label=var, color=colors.get(var,'white'),
+                linewidth=2 if 'HFrame' not in var else 1,
+                linestyle='-' if '_poc' in var else 'dotted'
+            )
 
-    # -------- 色带填充（严格和Dash同步！！）--------
-    # HFrame上轨
-    h_getin = getattr(multFramevp_poc, "HFrame_vwap_up_getin", None)
-    h_sl    = getattr(multFramevp_poc, "HFrame_vwap_up_sl", None)
-    if isinstance(h_getin, pd.Series) and isinstance(h_sl, pd.Series):
-        ax_k.fill_between(h_getin.index, h_getin.values, h_sl.values,
-                          color="hotpink", alpha=0.20, label="HFrame_up_band")
+    # 3) 色带
+    def _fill(a,b,idx,color):
+        ax_k.fill_between(
+            idx, a.values, b.values,
+            color=color, alpha=0.2
+        )
+    up1 = getattr(multFramevp_poc,'HFrame_vwap_up_getin',None)
+    up2 = getattr(multFramevp_poc,'HFrame_vwap_up_sl',None)
+    if isinstance(up1,pd.Series) and isinstance(up2,pd.Series):
+        _fill(up1, up2, up1.index, "hotpink")
+    dn1 = getattr(multFramevp_poc,'HFrame_vwap_down_sl',None)
+    dn2 = getattr(multFramevp_poc,'HFrame_vwap_down_getin',None)
+    if isinstance(dn1,pd.Series) and isinstance(dn2,pd.Series):
+        _fill(dn1, dn2, dn1.index, "deepskyblue")
 
-    # HFrame下轨
-    h_down_sl = getattr(multFramevp_poc, "HFrame_vwap_down_sl", None)
-    h_down_getin = getattr(multFramevp_poc, "HFrame_vwap_down_getin", None)
-    if isinstance(h_down_sl, pd.Series) and isinstance(h_down_getin, pd.Series):
-        ax_k.fill_between(h_down_sl.index, h_down_sl.values, h_down_getin.values,
-                          color="deepskyblue", alpha=0.20, label="HFrame_down_band")
+    # 4) 成交量
+    if isinstance(df, pd.DataFrame) and 'vol' in df.columns:
+        ax_vol.bar(df.index, df['vol'].values,
+                   width=(df.index[1]-df.index[0]).seconds/86400*0.8,
+                   color='dodgerblue', alpha=0.6)
 
-    # 成交量柱状图
-    if df is not None and 'vol' in df.columns:
-        times = datetime_index if datetime_index is not None else df.index
-        ax_vol.bar(times, df['vol'].values, width=0.003, color='dodgerblue', alpha=0.6, label='Volume')
+    # 5) 格式化 x 轴
+    ax_vol.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax_vol.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+    # fig.autofmt_xdate(rotation=10)
+    for ax in (ax_k, ax_vol):
+        ax.xaxis.set_tick_params(rotation=10)
 
-    # y轴自适应
-    try:
-        all_y = []
-        for var in vars_to_plot:
-            series = getattr(multFramevp_poc, var, None)
-            if isinstance(series, pd.Series):
-                all_y.extend(series.dropna().values)
-        if all_y:
-            ymin = min(all_y) * 0.99
-            ymax = max(all_y) * 1.01
-            ax_k.set_ylim(ymin, ymax)
-    except:
-        pass
-
-    ax_k.set_title(f"OKX 4s K-line + vp_poc/VWAP Derived Series - {symbol}", color='w')
-    ax_k.set_ylabel("Price/Value", color='w')
-    ax_vol.set_ylabel("Volume", color='w')
-    for spine in ax_k.spines.values():
-        spine.set_color('white')
-    for spine in ax_vol.spines.values():
-        spine.set_color('white')
-    ax_k.tick_params(axis='x', labelrotation=15, colors='white')
-    ax_k.tick_params(axis='y', colors='white')
-    ax_vol.tick_params(axis='x', labelrotation=15, colors='white')
-    ax_vol.tick_params(axis='y', colors='white')
+    # 6) 其余美化略……
+    ax_k.set_title(f"{symbol} vp_poc/VWAP - {datetime.now()}", color='w')
+    #ax_k.legend(loc='upper left', facecolor='black', labelcolor='white')
     ax_k.legend(
         loc="lower center",
         bbox_to_anchor=(0.5, -0.15),
@@ -379,25 +360,15 @@ def plot_all_multiftfpoc_vars(multFramevp_poc, symbol='', is_trading=False, save
         facecolor="black",
         labelcolor="white"
     )
-
     ax_k.grid(True, alpha=0.2)
-    ax_vol.grid(True, alpha=0.15)
-    # X轴日期格式
-    if datetime_index is not None:
-        ax_vol.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
-        fig.autofmt_xdate(rotation=10)
+    ax_vol.grid(True, alpha=0.2)
 
     if save_to_file:
-        save_dir = "plots"
-        os.makedirs(save_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S-%f")[:-3]
-        prefix = f"{symbol}_" if symbol else ""
-        if is_trading:
-            prefix = f"trade_{prefix}"
-        filename = os.path.join(save_dir, f"{prefix}multFramevp_poc_combined_plot_{timestamp}.png")
-        fig.savefig(filename, facecolor=fig.get_facecolor())
+        os.makedirs("plots", exist_ok=True)
+        fn = f"plots/{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        fig.savefig(fn, facecolor=fig.get_facecolor())
         plt.close(fig)
-        print(f"Plot saved to file: {filename}")
+        print("Saved to", fn)
     else:
         return fig
 

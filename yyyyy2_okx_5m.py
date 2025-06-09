@@ -257,7 +257,7 @@ class trade_coin(object):
                     stop_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 4)  #4s * 15 = 60s,  1 min
                     
                     ChineseTradeTime = False
-                    center_tp_poc = (self.multiFrameVwap.SFrame_vwap_up_getin.iloc[-1] - self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1])/2 + self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1]
+                    center_tp_poc = self.multiFrameVwap.SFrame_vp_poc.iloc[-1]  #(self.multiFrameVwap.SFrame_vwap_up_getin.iloc[-1] - self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1])/2 + self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1]
                     NoneTradeTimeProfit = 0.0025
                     # if not ChineseTradeTime:
                     #     stop_profit = min(stop_profit, 0.0025)  #20倍杠杆的4%，夜间盘看不到就当做马丁止盈吧。 后续加一下时间段来区分。
