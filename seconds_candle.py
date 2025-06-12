@@ -26,7 +26,8 @@ async def _collect_trades_and_save_once(symbol="BTC-USDT-SWAP", interval=4):
         await ws.send(json.dumps({
             "op": "subscribe",
             "args": [{"channel": "trades", "instId": symbol},
-                     {"channel": "books", "instId": symbol}]
+                    #  {"channel": "books", "instId": symbol}
+                     ]
         }))
         cache = []               # 缓存原始 trade
         interval_start = int(time.time())

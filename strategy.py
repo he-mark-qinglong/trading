@@ -35,15 +35,15 @@ class RuleConfig:
             name="conservative",
             price_attr="SFrame_vwap_down_sl2",
             amount=2,
-            consec_attr="SFrame_vwap_down_poc",
+            consec_attr="HFrame_vwap_down_getin",
             consec_compare="below",
-            consec_count=2
+            consec_count=1
         ),
         EntryTier(
             name="neutral",
             price_attr="SFrame_vwap_down_sl",
             amount=1,
-            consec_attr="SFrame_vwap_down_poc",
+            consec_attr="HFrame_vwap_down_getin",
             consec_compare="below",
             consec_count=2
         ),
@@ -53,17 +53,17 @@ class RuleConfig:
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=5
+            consec_count=6
         ),
 
-        EntryTier(
-            name="aggressive",
-            price_attr="SFrame_vwap_down_poc",
-            amount=1,
-            consec_attr="SFrame_vwap_down_poc",
-            consec_compare="below",
-            consec_count=10
-        ),
+        # EntryTier(
+        #     name="dareful",
+        #     price_attr="SFrame_vwap_down_poc",
+        #     amount=1,
+        #     consec_attr="SFrame_vwap_down_poc",
+        #     consec_compare="below",
+        #     consec_count=10
+        # ),
         
     ])
 
@@ -72,15 +72,15 @@ class RuleConfig:
             name="conservative",
             price_attr="SFrame_vwap_up_sl2",
             amount=2,
-            consec_attr="SFrame_vwap_up_poc",
+            consec_attr="HFrame_vwap_up_getin",
             consec_compare="above",
-            consec_count=2
+            consec_count=1
         ),
         EntryTier(
             name="neutral",
             price_attr="SFrame_vwap_up_sl",
             amount=1,
-            consec_attr="SFrame_vwap_up_poc",
+            consec_attr="HFrame_vwap_up_getin",
             consec_compare="above",
             consec_count=2
         ),
@@ -93,14 +93,14 @@ class RuleConfig:
             consec_count=5
         ),
         
-        EntryTier(
-            name="aggressive",
-            price_attr="SFrame_vwap_up_poc",
-            amount=1,
-            consec_attr="SFrame_vwap_up_poc",
-            consec_compare="above",
-            consec_count=10
-        ),
+        # EntryTier(
+        #     name="dareful",
+        #     price_attr="SFrame_vwap_up_poc",
+        #     amount=1,
+        #     consec_attr="SFrame_vwap_up_poc",
+        #     consec_compare="above",
+        #     consec_count=5
+        # ),
     ])
 
 class MultiFramePOCStrategy:

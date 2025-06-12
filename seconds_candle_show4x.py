@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND #+ 1000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND + 1000
 
 
 def read_and_sort_df(is_append=True):
@@ -49,7 +49,7 @@ def read_and_sort_df(is_append=True):
     # 3. 转换时间
     df["ts"] = df["ts"].astype(int)
     df = df.drop_duplicates("ts").sort_values("ts")
-    df["datetime"] = pd.to_datetime(df["ts"], unit="s")
+    df["datetime"] =  pd.to_datetime(df["ts"], unit="s")
     df = df.set_index("ts", drop=True)
 
     # 6) 保证数据是连续、升序的

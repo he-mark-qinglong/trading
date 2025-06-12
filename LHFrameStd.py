@@ -9,9 +9,9 @@ import vwap_calc
 
 class WindowConfig:
     def __init__(self):
-        self.window_tau_l = int(12)
-        self.window_tau_h = self.window_tau_l * 5
-        self.window_tau_s = self.window_tau_h * 5
+        self.window_tau_l = int(10)
+        self.window_tau_h = self.window_tau_l * 9
+        self.window_tau_s = self.window_tau_h * 4
 
 class MultiTFvp_poc:
     def __init__(self,
@@ -67,23 +67,23 @@ class MultiTFvp_poc:
                            debug=debug)
             fH = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_HFrame, 40, 1-0.14, 0.99,
+                           self.window_HFrame, 40, 1-0.0027, 0.99,
                            debug=debug)
             fS = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_SFrame, 40, 1-0.07, 0.99,
+                           self.window_SFrame, 40, 1-0.0027, 0.99,
                            debug=debug)
             hvp = fH.result()
             svp = fS.result()
             fbH = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
                             length=self.window_HFrame, bins=40,
-                            pct=0.07, decay=0.995, vwap_series=hvp,
+                            pct=0.0027, decay=0.995, vwap_series=hvp,
                             debug=debug)
             fbS = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
                             length=self.window_SFrame, bins=40,
-                            pct=0.07, decay=0.995, vwap_series=svp,
+                            pct=0.0027, decay=0.995, vwap_series=svp,
                             debug=debug)
 
         idx = df_block.index

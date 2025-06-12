@@ -13,13 +13,13 @@ from db_client import OrderbookWALClient, drop_orderbook_snap
 symbol       = "ETH-USDT-SWAP"
 WS_URL       = "wss://ws.okx.com:8443/ws/v5/public"
 INTERVAL     = 1         # 采样间隔：每 1 秒
-TOP_N        = 5         # 前 5 档
+TOP_N        = 10         # 前 5 档
 MAX_ROWS     = 10000     # 表中最多保留行数
 DB_PATH      = f"{symbol}.db"
 TABLE        = "orderbook_snap"
 
 # drop_orderbook_snap(DB_PATH)
-client_book = OrderbookWALClient(db_path=DB_PATH, table=TABLE)
+client_book = OrderbookWALClient(db_path=DB_PATH, table=TABLE, top_n=TOP_N)
 
 
 # 打印 CREATE TABLE 语句
@@ -40,7 +40,7 @@ with conn:
         print(f"{cid:>2} | {name:<10} | {col_type:<6} | notnull={notnull} | pk={pk}")
 conn.close()
 
-
+import numpy as np
 def compute_obpi(df: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
     """
     给定一个包含 bid1..bidN, ask1..askN 的 df，
@@ -58,77 +58,88 @@ def compute_obpi(df: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
                           0.0)
     return df
 
+# 2) 本地盘口状态
+bids_map = {}  # price(float) -> size(float)
+asks_map = {}
+
 async def _collect_books_once():
     async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
         # 订阅 books5
         await ws.send(json.dumps({
             "op": "subscribe",
             "args": [{
-                "channel":  "books5",
+                "channel":  "books",
                 "instType": "SWAP",
                 "instId":   symbol
             }]
         }))
-        print(f"[{symbol}] subscribed to books5")
+        print(f"[{symbol}] subscribed to books")
 
         last_ts = 0
         while True:
-            try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=30)
-            except asyncio.TimeoutError:
-                print("No depth data for 30s, reconnecting…")
-                break
-
-            data = json.loads(raw)
-
-            # 过滤订阅确认、心跳包
-            if data.get("event") in ("subscribe", "cancel", "error"):
+            raw = await asyncio.wait_for(ws.recv(), timeout=30)
+            msg = json.loads(raw)
+            if msg.get("event") in ("subscribe","cancel","error"):
                 continue
-            if data.get("arg", {}).get("channel") != "books5":
+            if msg.get("arg",{}).get("channel")!="books":
                 continue
 
-            rec = data["data"][0]
+            rec    = msg["data"][0]
+            action = msg.get("action")   # snapshot | update
+            # 3) 全量加载 or 增量更新
+            if action == "snapshot":
+                bids_map.clear()
+                asks_map.clear()
+                for p, s in rec["bids"]:
+                    bids_map[float(p)] = float(s)
+                for p, s in rec["asks"]:
+                    asks_map[float(p)] = float(s)
+
+            elif action == "update":
+                # bids
+                for p, s in rec["bids"]:
+                    price = float(p); size = float(s)
+                    if size == 0:
+                        bids_map.pop(price, None)
+                    else:
+                        bids_map[price] = size
+                # asks
+                for p, s in rec["asks"]:
+                    price = float(p); size = float(s)
+                    if size == 0:
+                        asks_map.pop(price, None)
+                    else:
+                        asks_map[price] = size
+
+            # 4) 到了采样时刻再去算 TopN + OBPI
             now = int(time.time())
             if now - last_ts < INTERVAL:
-                # 没到采样间隔就不落库
                 continue
-
-            # 拿前 TOP_N 档
-            bids = rec.get("bids", [])[:TOP_N]
-            asks = rec.get("asks", [])[:TOP_N]
-            sum_b = sum(float(x[1]) for x in bids)
-            sum_a = sum(float(x[1]) for x in asks)
-            obpi  = (sum_b - sum_a) / (sum_b + sum_a) if (sum_b + sum_a) > 0 else 0.0
-
-            row = {
-                "ts": now,
-                **{f"bid{i+1}": float(bids[i][1]) for i in range(len(bids))},
-                **{f"ask{i+1}": float(asks[i][1]) for i in range(len(asks))},
-                "sum_bid": round(sum_b, 4),
-                "sum_ask": round(sum_a, 4),
-                "obpi":    round(obpi, 4)
-            }
-            df = pd.DataFrame([row])
-            client_book.append_df_ignore(df)
-            print(f"[Books5 @ {now}] sum_bid={sum_b:.2f}, sum_ask={sum_a:.2f}, obpi={obpi:.4f}")
-
-            # 裁剪旧数据，只保留最新 MAX_ROWS 行
-            conn = client_book._connect()
-            with conn:
-                cnt = conn.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0]
-                if cnt > MAX_ROWS:
-                    to_delete = cnt - MAX_ROWS
-                    conn.execute(f"""
-                        DELETE FROM {TABLE}
-                         WHERE ts IN (
-                           SELECT ts FROM {TABLE}
-                           ORDER BY ts ASC
-                           LIMIT ?
-                         )
-                    """, (to_delete,))
-            conn.close()
-
             last_ts = now
+
+            # sort 并切 TopN
+            top_bids = sorted(bids_map.items(), key=lambda x: x[0], reverse=True)[:TOP_N]
+            top_asks = sorted(asks_map.items(), key=lambda x: x[0])[:TOP_N]
+
+            sum_b = sum(sz for _, sz in top_bids)
+            sum_a = sum(sz for _, sz in top_asks)
+            obpi  = (sum_b - sum_a) / (sum_b + sum_a) if (sum_b+sum_a)>0 else 0.0
+
+            # 构造写库的 row
+            row = {"ts": now}
+            for i, (_, sz) in enumerate(top_bids,  start=1):
+                row[f"bid{i}"] = sz
+            for i, (_, sz) in enumerate(top_asks,  start=1):
+                row[f"ask{i}"] = sz
+            row["sum_bid"] = round(sum_b, 4)
+            row["sum_ask"] = round(sum_a, 4)
+            row["obpi"]    = round(obpi,   4)
+
+            # 落库 & 裁剪
+            client_book.append_df_ignore(pd.DataFrame([row]))
+            # … 同你原来那段裁剪逻辑 …
+
+            print(f"[Books @ {now}] Top{TOP_N} sum_bid={sum_b:.0f} sum_ask={sum_a:.0f} obpi={obpi:.4f}")
 
 async def collect_depth():
     while True:
