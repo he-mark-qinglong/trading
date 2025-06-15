@@ -102,6 +102,7 @@ class trade_coin(object):
             print('设置出错',e)
             time.sleep(5)
             pass
+        self.usdt_total=self.get_usdt_total()
         self.upl_open_condition()
 
         '''数据初始化'''
@@ -112,9 +113,9 @@ class trade_coin(object):
     def trade1(self):
         try:
             print('运行中',self.symbol)
-            if time.time()-self.asset_time>60 or self.usdt_total == None:
+            self.usdt_total=self.get_usdt_total()
+            if time.time()-self.asset_time>60:
                 self.asset_time=time.time()
-                self.usdt_total=self.get_usdt_total()
                 self.asset_record.append(self.usdt_total)
                 self.upl_open_condition()
                 # print('--1'*1000,self.symbol,self.asset_record)
@@ -125,16 +126,13 @@ class trade_coin(object):
                 max_draw=self.usdt_total/max(self.asset_record)
             else:
                 max_draw=1
+
             if max_draw < 1 - 0.1:
                 self.asset_normal=0
                 print('----当日资金回撤百分比超过%s'%(1-max_draw)*30,'当日停止开仓'*100)
             else:
                 self.asset_normal=1
                 print('++++当日资金回撤百分比为%s'%(1-max_draw),self.usdt_total,max(self.asset_record))
-            
-            time11 = datetime.datetime.now()
-            # df = self.get_kline(init=False)
-            # self.coin_data = self.multiFrameVwap.append_df(df, DEBUG)
 
             self.coin_data = self.get_kline(init=True)
             self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
@@ -153,7 +151,12 @@ class trade_coin(object):
                 cur_close = close.iloc[-1]
                 cur_low = low.iloc[-1]
                 cur_high = high.iloc[-1]
-                if 1 or cur_close >= 2800:
+
+                notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
+                print(notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict)
+                print('--2'*10,upl_long_dict,upl_short_dict,sum(upl_long_dict.values()),sum(upl_short_dict.values()))
+            
+                if 1:
                     for side in ("long", "short"):
                         # 1) 检查超时撤单
                         if self.strategy.should_cancel(side):
@@ -161,8 +164,10 @@ class trade_coin(object):
                             self.strategy.clear_order(side)
 
                     # 2) 评估新信号并下单
-                    sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap, 0)
-                    sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, 0)
+                    all_values = sum(positionAmount_dict_sub.values())
+                    open2equity_pct = all_values/self.usdt_total
+                    sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
+                    sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
                 else:
                     time.sleep(60)
                     sig_long = None
@@ -229,9 +234,7 @@ class trade_coin(object):
                     self.upl_open_condition()
                 #平仓
                 if 1:
-                    notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
-                    print(notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict)
-                    print('--2'*10,upl_long_dict,upl_short_dict,sum(upl_long_dict.values()),sum(upl_short_dict.values()))
+                    
                     symbol=self.symbol
                     try:
                         upl_short=upl_dict[symbol+'-SHORT']
@@ -293,9 +296,9 @@ class trade_coin(object):
                         elif cross_down_and_tp:
                             close_amount = min(2, amount_short)
                             price0       = cur_SFrame_vwap_down_poc
-                        elif cross_center_and_tp:
-                            close_amount = 1
-                            price0 = cur_low
+                        # elif cross_center_and_tp:
+                        #     close_amount = 1
+                        #     price0 = cur_low
 
                         # 如果 close_amount>0，就发平仓单
                         if close_amount > 0:
@@ -335,10 +338,10 @@ class trade_coin(object):
                             # ③ SFrame 上轨止盈 → 最多平 2
                             close_amount = min(2, amount_long)
                             price0       = cur_SFrame_vwap_up_poc
-                        elif cross_center_and_tp:
-                            # ② 中心止盈 → 平 1
-                            close_amount = 1
-                            price0 = cur_high
+                        # elif cross_center_and_tp:
+                        #     # ② 中心止盈 → 平 1
+                        #     close_amount = 1
+                        #     price0 = cur_high
                         
                         # 如果需要平仓，再发单
                         if close_amount > 0:
@@ -351,8 +354,8 @@ class trade_coin(object):
                             print(place_order,symbol,model)
                             plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
 
-                    self.usdt_total=self.get_usdt_total()
-                    if ((upl_long+ upl_short)/self.usdt_total<-0.30) or self.asset_normal==0 :
+                    
+                    if ((upl_long + upl_short)/self.usdt_total<-0.30) or self.asset_normal==0 :
                         try:  
                             if self.asset_normal==0:
                                logging.info((self.user,'当日回撤过大所有仓位止损'))
@@ -395,7 +398,6 @@ class trade_coin(object):
             print('运行出错',e)
 
     def upl_open_condition(self):
-        self.usdt_total=self.get_usdt_total()
         notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
         if (sum(upl_long_dict.values())/self.usdt_total<-0.002 and sum(upl_long_dict.values())<sum(upl_short_dict.values())) :
             self.upl_long_open=0

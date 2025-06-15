@@ -130,7 +130,7 @@ class MultiFramePOCStrategy:
                  cur_close: float,
                  close_series,            # 你的 close 序列
                  data_src,                # multFramevp_poc 对象
-                 record_buy_total        # 你的 record_buy_total_*（内部不使用，仅配接口）
+                 open2equity_pct        # 你的 record_buy_total_*（内部不使用，仅配接口）
         )-> Optional[OrderSignal]:
         """        
         1) 如果已有挂单且未超时 → 返回 None  
@@ -140,8 +140,8 @@ class MultiFramePOCStrategy:
         if self._has_order[side]:
             # 外部会继续调用 should_cancel 判断是否超时
             return None
-        if record_buy_total >= 20:
-            return None  #最多开20个订单，以免爆仓。
+        if open2equity_pct >= 0.2:
+            return None  #最多开20倍杠杆下的20%仓位订单---也就是20x0.2=4倍最大页面杠杆率可以承受后续25%的单边波幅，以免爆仓。
         
         rule   = self.long_rule if side == "long" else self.short_rule
         opened = self._opened[side]

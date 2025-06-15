@@ -1,68 +1,125 @@
 import os
+import time
+
 import pandas as pd
 import numpy as np
-import time
 
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
-from dash.exceptions import PreventUpdate
 
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
 import LHFrameStd
 from yyyyy2_okx_5m import trade_coin
-
 from db_client import SQLiteWALClient
 
-use4x = False
+# ========== 参数配置 ==========
+BASIC_INTERVAL = 5
+use1x = True
 symbol = "ETH-USDT-SWAP"
+DB_PATH = f"{symbol}.db"
+DEBUG = False
 
-LIMIT_K_N = 1800
-DB_PATH = f'{symbol}.db'
-client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_1x")
+# Anchored Momentum 参数
+MOM_L   = 10   # 快线周期
+MOM_SL  = 8    # 慢线（信号）周期
+MOM_SM  = False  # 是否对 POC-VWAP 做 EMA 平滑
+MOM_SMP = 7    # 平滑周期
+MOM_SH  = True # 显示柱状图
+MOM_EB  = True # 启用 bar colors
 
+# ========== 数据客户端 & multiVwap 实例 ==========
+client = SQLiteWALClient(db_path=DB_PATH,
+                         table="ohlcv_1x" if use1x else "ohlcv")
 trade_client = None
 
-window_tau_l = int(12) 
-window_tau_h = window_tau_l * 5
-window_tau_s = window_tau_h * 12
-multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=window_tau_l, window_HFrame=window_tau_h, window_SFrame=window_tau_s)
+windowConfig = LHFrameStd.WindowConfig()
+multiVwap = LHFrameStd.MultiTFvp_poc(
+    window_LFrame=windowConfig.window_tau_l,
+    window_HFrame=windowConfig.window_tau_h,
+    window_SFrame=windowConfig.window_tau_s
+)
 
+LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 39)
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 5000
+
+
+# ========== 辅助函数 ==========
+def read_and_sort_df(is_append=True):
+    limit = LIMIT_K_N_APPEND if is_append else LIMIT_K_N
+    df = client.read_df(limit=limit, order_by="ts DESC")
+    required = {"ts","open","high","low","close","vol"}
+    if not required.issubset(df.columns):
+        raise ValueError(f"缺少必要列：{required - set(df.columns)}")
+    df["ts"] = df["ts"].astype(int)
+    df = df.drop_duplicates("ts").sort_values("ts")
+    df["datetime"] = pd.to_datetime(df["ts"], unit="s")
+    df = df.set_index("ts", drop=True).sort_index()
+    return df
+
+def ema(series: pd.Series, period: int) -> pd.Series:
+    return series.ewm(span=period, adjust=False).mean()
+
+def sma(series: pd.Series, period: int) -> pd.Series:
+    return series.rolling(period).mean()
+
+def anchored_momentum(
+    df: pd.DataFrame,
+    poc_series: pd.Series,
+    l: int, sl: int,
+    sm: bool, smp: int,
+    sh: bool, eb: bool
+) -> pd.DataFrame:
+    """
+    计算 amom, amoms, hl, hlc
+    """
+    out = pd.DataFrame(index=df.index)
+    src = poc_series.reindex(df.index)
+    if sm:
+        src = ema(src, smp)
+    p = 2*l + 1
+    out["amom"]  = 100 * ( src / sma(poc_series, p).reindex(df.index) - 1 )
+    out["amoms"] = sma(out["amom"], sl)
+
+    # 柱状图 hl
+    out["hl"] = 0.0
+    if sh:
+        pos = (out["amom"]>out["amoms"]) & (out["amom"]>0) & (out["amoms"]>0)
+        neg = (out["amom"]<out["amoms"]) & (out["amom"]<0) & (out["amoms"]<0)
+        out.loc[pos, "hl"] = np.minimum(out.loc[pos,"amom"],  out.loc[pos,"amoms"])
+        out.loc[neg, "hl"] = np.maximum(out.loc[neg,"amom"],  out.loc[neg,"amoms"])
+    # bar-color
+    out["hlc"] = None
+    fast_above = out["amom"] > out["amoms"]
+    for idx, (fa, a, s) in enumerate(zip(fast_above, out["amom"], out["amoms"])):
+        if fa:
+            out.iat[idx, out.columns.get_loc("hlc")] = "green" if a>=0 else "orange"
+        else:
+            out.iat[idx, out.columns.get_loc("hlc")] = "orange" if a>=0 else "red"
+    if not eb:
+        out["hlc"] = None
+
+    return out
+
+# ========== Dash App ==========
 app = Dash(__name__)
 app.layout = html.Div([
-    html.H2("OKX 5s K-line OHLCV (Auto-refresh)"),
+    html.H2(f"OKX {BASIC_INTERVAL if not use1x else 1*BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
     dcc.ConfirmDialogProvider(
-        children=html.Button("一键平仓", id="btn-close", n_clicks=0),
+        children=html.Button("一键平仓", id="btn-close"),
         id="confirm-close",
         message="⚠️ 确认要全部平仓？此操作不可撤销！"
     ),
-    html.Div(id="close-status", style={"marginTop": "5px", "color": "green"}),
+    html.Div(id="close-status", style={"marginTop":"5px","color":"green"}),
     dcc.Graph(id="kline-graph"),
-    dcc.Interval(id='interval', interval=5*1000, n_intervals=0),
-    html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
+    dcc.Interval(
+        id="interval",
+        interval=(8*BASIC_INTERVAL if use1x else BASIC_INTERVAL)*1000,
+        n_intervals=0
+    ),
+    html.Div(id="status-msg", style={"color":"red","marginTop":1})
 ])
-
-# 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
-colors = {
-    'LFrame_vp_poc_series':     'yellow',
-    'SFrame_vp_poc':            'purple',
-
-    'SFrame_vwap_up_poc':          'red',
-    # 'SFrame_vwap_up_getin':    'orange',
-    # 'SFrame_vwap_up_sl':       'firebrick',
-    'SFrame_vwap_down_poc':        'blue',
-    # 'SFrame_vwap_down_getin':  'deepskyblue',
-    # 'SFrame_vwap_down_sl':     'seagreen',
-
-    # 'HFrame_vwap_up_poc':          'magenta',
-    'HFrame_vwap_up_getin':    'deeppink',
-    'HFrame_vwap_up_sl':       'orangered',
-    # 'HFrame_vwap_down_poc':        'teal',
-    'HFrame_vwap_down_getin':  'turquoise',
-    'HFrame_vwap_down_sl':     'darkslategray',
-}
-vars_to_plot = list(colors.keys())
 
 @app.callback(
     Output("kline-graph", "figure"),
@@ -71,190 +128,152 @@ vars_to_plot = list(colors.keys())
 )
 def update_graph(n):
     try:
-        # 1. 从 SQLite 读最新 2000 条
-        try:
-            # 先拿最新 2000 条（倒序）
-            df = client.read_df(limit=LIMIT_K_N, order_by="ts DESC")
-            if df.empty:
-                return go.Figure(), "暂无数据"
+        # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
+        df = read_and_sort_df(is_append=False)
+        multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
 
-            # 再正序排列
-            df = df.sort_values("ts", ascending=True)
-        except Exception as e:
-            return go.Figure(), f"读取数据库错误：{e}"
-        if df.empty:
-            return go.Figure(), "暂无数据"
+        # 截断到第一个有效 SFrame_vp_poc
+        start = multiVwap.SFrame_vp_poc.first_valid_index()
+        if start is None:
+            return go.Figure(), "暂无有效数据"
+        df = df.loc[start:].copy()
+        for var in vars(multiVwap):
+            ser = getattr(multiVwap, var)
+            if isinstance(ser, pd.Series):
+                setattr(multiVwap, var, ser.loc[start:])
 
-        # 2. 检查必须列
-        required = {"ts","open","high","low","close","vol"}
-        if not required.issubset(df.columns):
-            miss = required - set(df.columns)
-            return go.Figure(), f"CSV 缺失列: {miss}"
-
-        # 3. 转换时间
-        df["ts"] = df["ts"].astype(int)
-        df = df.drop_duplicates("ts").sort_values("ts")
-        df["datetime"] = pd.to_datetime(df["ts"], unit="s")
-
-        # 4. 计算所有 vp_poc / VWAP / STD 系列
-        before_cal = time.time()
-        
-        multiVwap.calculate_SFrame_vp_poc_and_std(df)
-        after_calc = time.time()
-        print(f'{"4x" if use4x else "1x" }time consumed:{after_calc - before_cal}')
-
-        # 5. 找到第一个非 NaN 的 HFrame 下轨止损线索引，同步截断
-        start = multiVwap.HFrame_vwap_down_sl.first_valid_index()
-        if start is not None:
-            df = df.loc[start:].copy()
-            for var in vars_to_plot:
-                s = getattr(multiVwap, var, None)
-                if isinstance(s, pd.Series):
-                    setattr(multiVwap, var, s.loc[start:])
-        else:
-            df = df.iloc[0:0]
-
-        # 6. 构建子图
+        # --- 2. 子图：3 行 ---
         fig = make_subplots(
-            rows=2, cols=1, shared_xaxes=True,
-            vertical_spacing=0.1, row_heights=[0.7, 0.3],
-            subplot_titles=("K-line + vp_poc/VWAP", "Volume")
+            rows=3, cols=1, shared_xaxes=True,
+            vertical_spacing=0.08,
+            row_heights=[0.6, 0.2, 0.2],
+            subplot_titles=("K-line + vp_poc/VWAP", "Volume", "Anchored Momentum")
         )
 
-        # 7. 添加 K 线
+        # (A) 行 1: K 线 + vp/VWAP 系列
         fig.add_trace(go.Candlestick(
-            x=df["datetime"],
-            open=df["open"], high=df["high"],
+            x=df["datetime"], open=df["open"], high=df["high"],
             low=df["low"], close=df["close"],
-            name="5s-K"
+            name="K-line"
         ), row=1, col=1)
+        basic_colors = [
+            'red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet',
+            'pink', 'brown', 'black', 'white', 'gray', 'cyan', 'magenta',
+            'lime', 'navy', 'maroon', 'olive', 'teal', 'purple', 'gold',
+            'silver', 'coral', 'salmon', 'turquoise', 'chocolate', 'khaki'
+        ]
+        # 所有 vp/VWAP/STD 系列
+        for name, color in {
+            **{k:'firebrick' for k in ["LFrame_vp_poc_series"]},
+            **{k:'purple'    for k in ["SFrame_vp_poc"]},
+            **{k:'magenta'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            **{k:'khaki'   for k in ["SFrame_vwap_up_sl","SFrame_vwap_down_sl"]}
+        }.items():
+            series = getattr(multiVwap, name, None)
+            if isinstance(series, pd.Series):
+                fig.add_trace(go.Scatter(
+                    x=series.index.map(lambda ts: pd.to_datetime(ts,unit="s")),
+                    y=series.values,
+                    mode="lines", name=name,
+                    line=dict(color=color, width=1.5)
+                ), row=1, col=1)
 
-        # 8. 添加所有 vp_poc/VWAP 系列
-        for var in vars_to_plot:
-            series = getattr(multiVwap, var, None)
-            if not isinstance(series, pd.Series) or series.isna().all():
-                continue
-            fig.add_trace(go.Scatter(
-                x=df["datetime"],
-                y=series.values,
-                mode="lines",
-                name=var,
-                line=dict(
-                    color=colors[var],
-                    width=1 if "HFrame" in var else 2,
-                    dash="dot" if ("HFrame" in var and not "_poc" in var )else "solid" if '_poc' in var else "dash"
-                )
-            ), row=1, col=1)
+        # (B) 行 2: 成交量柱 + 通道
+        vol_df = multiVwap.vol_df.loc[df.index]
+        def get_alpha(v, lo, hi):
+            return 30/255 if v<lo else 254/255 if v>hi else 124/255
+        vols = vol_df["vol"].values
+        lows = vol_df["lower"].values
+        highs= vol_df["upper"].values
+        alphas = [get_alpha(v,l,h) for v,l,h in zip(vols,lows,highs)]
+        ops = df["open"].values; cls = df["close"].values
+        colors_bar = [
+            f"rgba({0 if c>o else 200},{200 if c>o else 0},0,{a})"
+            if c!=o else f"rgba(100,100,200,{a})"
+            for c,o,a in zip(cls,ops,alphas)
+        ]
+        fig.add_trace(go.Bar(
+            x=df["datetime"], y=vol_df["vol_scaled"],
+            marker_color=colors_bar, name="Vol"
+        ), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=df["datetime"], y=vol_df["sma_scaled"],
+            mode="lines", line=dict(color="gray",width=1), name="Vol MA"
+        ), row=2, col=1)
+        # 通道填充
+        fig.add_trace(go.Scatter(
+            x=df["datetime"], y=vol_df["lower_scaled"],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=df["datetime"], y=vol_df["upper_scaled"],
+            mode="lines", line=dict(width=0),
+            fill="tonexty", fillcolor="rgba(173,216,230,0.4)",
+            name="Vol Band"
+        ), row=2, col=1)
 
-        # 9. 添加成交量
-        df["vol_color"] = np.where(
-            df["close"] > df["open"],  "rgba(0,200,0,0.9)",
-            np.where(df["close"] < df["open"], "rgba(200,0,0,0.9)", "rgba(100,100,200,0.9)")
-        )
-        fig.add_trace(
-            go.Bar(
-                x=df["datetime"],
-                y=df["vol"],
-                marker_color=df["vol_color"],
-                name="Volume"
-            ),
-            row=2, col=1
-        )
+        # (C) 行 3: 动能指标
+        mom_df = multiVwap.momentum_df.reindex(df.index)
         
-
-        # … 前面已经 add_trace 画完所有线后 …
-
-        # --------- 填充 HFrame 上轨 getin 到 sl 之间的色带 ---------
-        # 1) 先画下边界（getin），线宽设为 0，不显示图例
-        fig.add_trace(go.Scatter(
+        print(mom_df.head)
+        fig.add_trace(go.Bar(
             x=df["datetime"],
-            y=multiVwap.HFrame_vwap_up_getin.values,
-            mode="lines",
-            line=dict(width=0),
+            y=mom_df["hl"],
+            marker_color=mom_df["hlc"],
+            name="Hist",
             showlegend=False
-        ), row=1, col=1)
+        ), row=3, col=1)
 
-        # 2) 再画上边界（sl），并填充到前一条 trace
         fig.add_trace(go.Scatter(
-            x=df["datetime"],
-            y=multiVwap.HFrame_vwap_up_sl.values,
-            mode="lines",
-            line=dict(width=0),
-            fill="tonexty",
-            fillcolor="rgba(255,105,180,0.2)",  # 热粉色半透明
-            name="HFrame_up_band"
-        ), row=1, col=1)
+            x=df["datetime"], y=mom_df["amom"],
+            mode="lines", line=dict(color="red", width=1),
+            name="AMOM"
+        ), row=3, col=1)
 
-
-        # --------- 填充 HFrame 下轨 sl 到 getin 之间的色带 ---------
-        # 1) 先画下边界（sl）
         fig.add_trace(go.Scatter(
-            x=df["datetime"],
-            y=multiVwap.HFrame_vwap_down_sl.values,
-            mode="lines",
-            line=dict(width=0),
-            showlegend=False
-        ), row=1, col=1)
+            x=df["datetime"], y=mom_df["amoms"],
+            mode="lines", line=dict(color="green", width=1),
+            name="Signal"
+        ), row=3, col=1)
 
-        # 2) 再画上边界（getin），并填充到前一条 trace
-        fig.add_trace(go.Scatter(
-            x=df["datetime"],
-            y=multiVwap.HFrame_vwap_down_getin.values,
-            mode="lines",
-            line=dict(width=0),
-            fill="tonexty",
-            fillcolor="rgba(173,216,230,0.2)",  # 淡天蓝色半透明
-            name="HFrame_down_band"
-        ), row=1, col=1)
+        fig.add_hline(y=0, line=dict(color="gray", dash="dash"), row=3, col=1)
 
-        # 10. 布局调整
+        # ========== 布局 ==========
         fig.update_layout(
             xaxis_rangeslider_visible=False,
-            height=700,
-            margin={"t":40, "b":60, "l":20, "r":20},  # 底部留点空间给图例
-            legend=dict(
-                orientation='h',      # 水平排列
-                x=0.5,                # x=0.5 居中
-                xanchor='center',     # 以图宽中心为对齐点
-                y=0,                  # y=0 紧贴绘图区底部
-                yanchor='top'         # 把 legend 的 “上边” 对齐到 y=0
-            )
+            height=900,
+            margin={"t":40,"b":60,"l":20,"r":20},
+            legend=dict(orientation="h",x=0.5,xanchor="center",y=0,yanchor="top")
         )
         fig.update_yaxes(title_text="Price", row=1, col=1)
-        fig.update_yaxes(title_text="Volume", row=2, col=1)
-
+        fig.update_yaxes(title_text="Vol",   row=2, col=1)
+        fig.update_yaxes(title_text="Mom",   row=3, col=1)
 
         return fig, "数据读取正常，自动刷新"
     except Exception as e:
-        return go.Figure(), f"渲染错误：{e}"
-
-def execute_close_position():
-    global trade_client
-    try:
-        if trade_client is None:
-            trade_client = trade_coin(symbol, 'yyyyy2_okx', 1500)
-        res = trade_client.close_all_positions()
-        return {"success": True, **res}
-    except Exception as e:
-        return {"success": False, "errmsg": str(e)}
+        return go.Figure(), f"渲染错误: {e}"
 
 @app.callback(
-    Output("close-status", "children"),
-    Output("btn-close", "disabled"),
-    Input("confirm-close", "submit_n_clicks"),
-    State("btn-close", "disabled"),
+    Output("close-status","children"),
+    Output("btn-close","disabled"),
+    Input("confirm-close","submit_n_clicks"),
+    State("btn-close","disabled")
 )
-def on_close(submit_n, disabled):
-    if not submit_n or disabled:
-        return '', False
+def on_close(n, disabled):
+    if not n or disabled:
+        return "", False
+    try:
+        global trade_client
+        if trade_client is None:
+            trade_client = trade_coin(symbol,'yyyyy2_okx',1500)
+        res = trade_client.close_all_positions()
+        return f"✔ 平仓完成: {res}", True
+    except Exception as e:
+        return f"✘ 平仓失败: {e}", True
 
-    status = "平仓中…"
-    result = execute_close_position()
-    if result.get("success"):
-        status = f"✔ 平仓完成，详情：{result}"
-    else:
-        status = f"✘ 平仓失败：{result.get('errmsg','未知错误')}"
-    return status, True
-
-if __name__ == '__main__':
-    app.run(debug=True, port=8050 if use4x else 8051)
+if __name__ == "__main__":
+    # 预热计算一次
+    df0 = read_and_sort_df(is_append=False)
+    multiVwap.calculate_SFrame_vp_poc_and_std(df0, DEBUG)
+    app.run(debug=True, port=8050 if use1x else 8051)

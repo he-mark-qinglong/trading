@@ -156,10 +156,10 @@ class MultiFramePOCStrategy:
                  cur_close: float,
                  close_series: pd.Series,
                  data_src,
-                 record_buy_total: int
+                 open2equity_pct: int
                 ) -> Optional[OrderSignal]:
         # 已有挂单未撤或累计过多单时跳过
-        if self._has_order[side] or record_buy_total >= 20:
+        if self._has_order[side] or open2equity_pct >= 0.2:
             return None
 
         rule = self.long_rule if side == "long" else self.short_rule
@@ -258,7 +258,8 @@ short_rule = EntryRule([
                         close_thresh="HFrame_vwap_down_getin", close_cmp="below",
                         atr_attr="atr", mult=6.0
                     ),
-                    ConsecutiveCondition("HFrame_vwap_up_getin", "above", 5)
+                    ConsecutiveCondition("HFrame_vwap_up_getin", "above", 5), 
+                    ConsecutiveCondition("HFrame_vwap_up_sl", "above", 1)
                 ])
             ])
         ],

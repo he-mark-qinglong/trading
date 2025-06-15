@@ -9,9 +9,9 @@ import vwap_calc
 
 class WindowConfig:
     def __init__(self):
-        self.window_tau_l = int(10)
-        self.window_tau_h = self.window_tau_l * 9
-        self.window_tau_s = self.window_tau_h * 4
+        self.window_tau_s = 300
+        self.window_tau_h = int(self.window_tau_s / 3)
+        self.window_tau_l = int(self.window_tau_h/3)
 
 class MultiTFvp_poc:
     def __init__(self,
@@ -25,8 +25,9 @@ class MultiTFvp_poc:
         self.window_HFrame       = window_HFrame
         self.window_SFrame       = window_SFrame
         self.std_window_LFrame   = std_window_LFrame
-        self.rma_smooth_window   = 9
-        self.golden_split_factor = 1.618
+        self.rma_smooth_window   = 4
+        self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
+        
 
         # 原始 OHLCV 全量存储
         self.df = None
@@ -56,6 +57,9 @@ class MultiTFvp_poc:
             'HFrame_vwap_down_sl','HFrame_vwap_down_sl2'
         ]:
             setattr(self, attr, pd.Series(dtype=float))
+
+
+        self.vol_df = None
 
     def _run_heavy(self, df_block, debug=False):
         """在一段 df_block 上并行计算 vp_poc 和 band，返回带 index 的 Series"""
@@ -176,12 +180,11 @@ class MultiTFvp_poc:
         self.SFrame_price_std = (
             close.rolling(self.window_SFrame).std() * 0.9
             + S_swing * 0.1
-        ) * self.golden_split_factor
-
+        ) 
         h_std = (
             close.rolling(self.window_HFrame).std() * 0.9
             + H_swing * 0.1
-        ) * self.golden_split_factor
+        ) 
         self.HFrame_price_std = pd.Series(h_std.values, index=close.index)
 
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
@@ -191,20 +194,17 @@ class MultiTFvp_poc:
 
         # SFrame
         self.SFrame_vwap_up_poc    = rma(shigh)
-        self.SFrame_vwap_up_getin  = rma(shigh + self.SFrame_price_std)
-        self.SFrame_vwap_up_getout = rma(shigh - self.SFrame_price_std)
-        self.SFrame_vwap_up_sl     = rma(shigh + 2*self.SFrame_price_std)
-        self.SFrame_vwap_up_sl2    = rma(shigh + 4*self.SFrame_price_std)
+        self.SFrame_vwap_up_getin  = rma(shigh + self.SFrame_price_std * self.febonaqis[1])
+        self.SFrame_vwap_up_sl     = rma(shigh + self.SFrame_price_std * self.febonaqis[2])
+        self.SFrame_vwap_up_sl2    = rma(shigh + self.SFrame_price_std * self.febonaqis[3])
 
         self.SFrame_vwap_down_poc    = rma(slow)
-        self.SFrame_vwap_down_getin  = rma(slow - self.SFrame_price_std)
-        self.SFrame_vwap_down_getout = rma(slow + self.SFrame_price_std)
-        self.SFrame_vwap_down_sl     = rma(slow - 2*self.SFrame_price_std)
-        self.SFrame_vwap_down_sl2    = rma(slow - 4*self.SFrame_price_std)
+        self.SFrame_vwap_down_getin  = rma(slow - self.SFrame_price_std * self.febonaqis[1])
+        self.SFrame_vwap_down_sl     = rma(slow - self.SFrame_price_std * self.febonaqis[2])
+        self.SFrame_vwap_down_sl2    = rma(slow - self.SFrame_price_std * self.febonaqis[3])
 
         # HFrame（取更保守的 max/min）
-        self.HFrame_vwap_up_poc    = np.maximum(self.SFrame_vwap_up_getin,
-                                                rma(hhigh))
+        self.HFrame_vwap_up_poc    = rma(hhigh) #np.maximum(self.SFrame_vwap_up_getin, rma(hhigh))
         self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,
                                                 rma(hhigh + self.HFrame_price_std))
         self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,
@@ -212,8 +212,7 @@ class MultiTFvp_poc:
         self.HFrame_vwap_up_sl2    = np.maximum(self.SFrame_vwap_up_sl2,
                                                 rma(hhigh + 4*self.HFrame_price_std))
 
-        self.HFrame_vwap_down_poc    = np.minimum(self.SFrame_vwap_down_getin,
-                                                  rma(hlow))
+        self.HFrame_vwap_down_poc    = rma(hlow) #np.minimum(self.SFrame_vwap_down_getin, rma(hlow))
         self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,
                                                   rma(hlow - self.HFrame_price_std))
         self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,
@@ -232,6 +231,109 @@ class MultiTFvp_poc:
         ]:
             setattr(self, attr, pd.Series(dtype=float))
         self.append_df(coin_date_df, debug=debug)
+
+        self.vol_df = self.compute_volume_channels(self.df)
+        self.momentum_df = self.anchored_momentum()
+
+        
+
+    # 1) volume核心指标计算
+    def compute_volume_channels(self, df: pd.DataFrame, 
+                                volume_map_period: int = 240, 
+                                volume_scale: float = 0.02
+                                ) -> pd.DataFrame:
+        """
+        在原 df 上计算：
+        - sma_vol  : 成交量简单移动平均
+        - std_vol  : 成交量标准差
+        - upper    : sma_vol + 3 * std_vol
+        - lower    : sma_vol + 2 * std_vol
+        - vol_scaled, sma_scaled, upper_scaled, lower_scaled: 均乘以 volume_scale
+        - color & alpha: 根据涨跌和区间设定 RGBA
+        """
+        df = df.copy()
+        # 均线和标准差
+        df['sma_vol'] = df['vol'].rolling(volume_map_period).mean()
+        df['std_vol'] = df['vol'].rolling(volume_map_period).std()
+
+        # 通道上下轨
+        df['upper'] = df['sma_vol'] + 3 * df['std_vol']
+        df['lower'] = df['sma_vol'] + 2 * df['std_vol']
+
+        
+        # 缩放后数值
+        df['vol_scaled']  = df['vol'] * volume_scale
+        df['sma_scaled']  = df['sma_vol'] * volume_scale
+        df['upper_scaled'] = df['upper'] * volume_scale
+        df['lower_scaled'] = df['lower'] * volume_scale
+
+        return df
+
+    def anchored_momentum(
+        self,
+        sm: bool = True,
+        showHistogram: bool = True,
+    ) -> pd.DataFrame:
+        """
+        在原 df 上计算：
+        - amom (Fast Momentum)
+        - amoms (Signal)
+        - hl (Histogram)
+        - hlc (Bar-color)
+        返回新的 DataFrame（同 df.index）。
+        """
+        # 周期参数
+        momentumPeriod = int(self.window_SFrame / 2)
+        signalPeriod   = int(self.window_HFrame / 2)
+        smp            = int(self.window_LFrame / 2)
+
+        # 拷一份避免修改原始
+        df = self.df.copy()
+
+        def ema(s: pd.Series, per: int) -> pd.Series:
+            return s.ewm(span=per, adjust=False).mean()
+
+        def sma(s: pd.Series, per: int) -> pd.Series:
+            return s.rolling(per).mean()
+
+        # --- 1) 计算 src ---
+        src = self.LFrame_vp_poc_series.reindex(df.index)
+        if sm:
+            src = ema(src, smp)
+
+        # --- 2) 计算 fast/slow momentum ---
+        p = 2 * momentumPeriod + 1
+        base_sma = sma(self.LFrame_vp_poc_series, p).reindex(df.index)
+        df['amom']  = 100 * (src / base_sma - 1)
+        df['amoms'] = sma(df['amom'], signalPeriod)
+
+        # --- 3) 计算 histogram hl ---
+        df['hl'] = np.nan
+        if showHistogram:
+            pos = (df['amom'] > df['amoms']) & (df['amom'] > 0) & (df['amoms'] > 0)
+            neg = (df['amom'] < df['amoms']) & (df['amom'] < 0) & (df['amoms'] < 0)
+            df.loc[pos, 'hl'] = np.minimum(df.loc[pos,'amom'],  df.loc[pos,'amoms'])
+            df.loc[neg, 'hl'] = np.maximum(df.loc[neg,'amom'],  df.loc[neg,'amoms'])
+        # 这样不会触发 inplace 警告
+        df['hl'] = df['hl'].fillna(0)
+
+        # --- 4) 计算 bar-color (hlc) ---
+        cond_fast = df['amom'] > df['amoms']
+        cond_pos  = df['amom'] >= 0
+
+        # 矢量化赋值，避免循环和 df.at
+        df['hlc'] = np.where(
+            cond_fast &  cond_pos,  'green',
+            np.where(
+                cond_fast & ~cond_pos, 'orange',
+                np.where(
+                    ~cond_fast & cond_pos, 'orange',
+                    'red'
+                )
+            )
+        )
+        
+        return df #df[['datetime', 'amom','amoms','hl','hlc']].reindex(self.df.index)
 
 import os
 import time
