@@ -43,7 +43,7 @@ windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 500 + LIMIT_K_N_APPEND #+ 1000
 DEBUG = False 
-DEBUG = True
+# DEBUG = True
 
 
 def get_martingale_coefficient(counter, base=1.06, delta=0.05):
@@ -75,7 +75,7 @@ class trade_coin(object):
         self.long_order_record_time = None
 
         DB_PATH = f'{symbol}.db'
-        self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_4x")
+        self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_9x")
 
 
         self.multiFrameVwap = MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 

@@ -53,7 +53,7 @@ class RuleConfig:
             amount=1,
             consec_attr="SFrame_vwap_down_poc",
             consec_compare="below",
-            consec_count=6
+            consec_count=3
         ),
 
         # EntryTier(
@@ -74,7 +74,7 @@ class RuleConfig:
             amount=2,
             consec_attr="HFrame_vwap_up_getin",
             consec_compare="above",
-            consec_count=1
+            consec_count=4
         ),
         EntryTier(
             name="neutral",
@@ -82,7 +82,7 @@ class RuleConfig:
             amount=1,
             consec_attr="HFrame_vwap_up_getin",
             consec_compare="above",
-            consec_count=2
+            consec_count=7
         ),
         EntryTier(
             name="aggressive",
@@ -90,7 +90,7 @@ class RuleConfig:
             amount=1,
             consec_attr="SFrame_vwap_up_poc",
             consec_compare="above",
-            consec_count=5
+            consec_count=15
         ),
         
         # EntryTier(

@@ -31,7 +31,7 @@ MOM_EB  = True # 启用 bar colors
 
 # ========== 数据客户端 & multiVwap 实例 ==========
 client = SQLiteWALClient(db_path=DB_PATH,
-                         table="ohlcv_1x" if use1x else "ohlcv")
+                         table="combined_9x" if use1x else "ohlcv")
 trade_client = None
 
 windowConfig = LHFrameStd.WindowConfig()
@@ -49,6 +49,7 @@ LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 5000
 def read_and_sort_df(is_append=True):
     limit = LIMIT_K_N_APPEND if is_append else LIMIT_K_N
     df = client.read_df(limit=limit, order_by="ts DESC")
+    print(df.head)
     required = {"ts","open","high","low","close","vol"}
     if not required.issubset(df.columns):
         raise ValueError(f"缺少必要列：{required - set(df.columns)}")
@@ -276,4 +277,4 @@ if __name__ == "__main__":
     # 预热计算一次
     df0 = read_and_sort_df(is_append=False)
     multiVwap.calculate_SFrame_vp_poc_and_std(df0, DEBUG)
-    app.run(debug=True, port=8050 if use1x else 8051)
+    app.run(debug=True, port=8051 if use1x else 8050)

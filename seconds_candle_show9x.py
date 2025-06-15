@@ -25,7 +25,7 @@ DEBUG= True
 DEBUG = False
 
 DB_PATH = f'{symbol}.db'
-client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_9x" if   use9x else "ohlcv")
+client = SQLiteWALClient(db_path=DB_PATH, table="combined_9x" if   use9x else "ohlcv")
 
 trade_client = None
 
@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 39)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 1000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND  #+ 1000
 
 
 def read_and_sort_df(is_append=True):
