@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 39)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND  #+ 1000
+LIMIT_K_N = 700 + LIMIT_K_N_APPEND  #+ 3000
 
 
 def read_and_sort_df(is_append=True):
@@ -72,7 +72,7 @@ app.layout = html.Div([
 
 # 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
 colors = {
-    'LFrame_vp_poc_series':     'firebrick',
+    'LFrame_vp_poc':     'firebrick',
     'SFrame_vp_poc':            'purple',
 
     'SFrame_vwap_up_poc':          'blue',
@@ -116,7 +116,7 @@ def update_graph(n):
 
         # --- 2. 子图：3 行 ---
         fig = make_subplots(
-            rows=3, cols=1, shared_xaxes=True,
+            rows=3, cols=1, shared_xaxes=True, shared_yaxes=False,
             vertical_spacing=0.08,
             row_heights=[0.6, 0.2, 0.2],
             subplot_titles=("K-line + vp_poc/VWAP", "Volume", "Anchored Momentum")
@@ -130,7 +130,7 @@ def update_graph(n):
         ), row=1, col=1)
         # 所有 vp/VWAP/STD 系列
         for name, color in {
-            **{k:'firebrick' for k in ["LFrame_vp_poc_series"]},
+            **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
             # **{k:'magenta'    for k in ["HFrame_vwap_up_poc"]},
             # **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
@@ -151,38 +151,86 @@ def update_graph(n):
                 ), row=1, col=1)
 
         # (B) 行 2: 成交量柱 + 通道
-        vol_df = multiVwap.vol_df.loc[df.index]
-        def get_alpha(v, lo, hi):
-            return 30/255 if v<lo else 254/255 if v>hi else 124/255
-        vols = vol_df["vol"].values
-        lows = vol_df["lower"].values
-        highs= vol_df["upper"].values
-        alphas = [get_alpha(v,l,h) for v,l,h in zip(vols,lows,highs)]
-        ops = df["open"].values; cls = df["close"].values
-        colors_bar = [
-            f"rgba({0 if c>o else 200},{200 if c>o else 0},0,{a})"
-            if c!=o else f"rgba(100,100,200,{a})"
-            for c,o,a in zip(cls,ops,alphas)
-        ]
-        fig.add_trace(go.Bar(
-            x=df["datetime"], y=vol_df["vol_scaled"],
-            marker_color=colors_bar, name="Vol"
-        ), row=2, col=1)
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["sma_scaled"],
-            mode="lines", line=dict(color="gray",width=1), name="Vol MA"
-        ), row=2, col=1)
-        # 通道填充
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["lower_scaled"],
-            mode="lines", line=dict(width=0), showlegend=False
-        ), row=2, col=1)
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["upper_scaled"],
-            mode="lines", line=dict(width=0),
-            fill="tonexty", fillcolor="rgba(173,216,230,0.4)",
-            name="Vol Band"
-        ), row=2, col=1)
+        # ------------------------ 替换这一段 ------------------------
+        # 9. 添加成交量（使用 vol_df 渲染）
+        vol_df = multiVwap.vol_df.loc[df.index]  # 对齐索引
+
+        # 9.1 透明度函数：Pine 里是 0–255，这里归一到 0–1
+        def get_alpha(vol, low, high):
+            if vol < low:
+                return 1# 180/255    # alpha=80
+            elif vol > high:
+                return 1#30/255    # alpha=30
+            else:
+                return 1#100/255    # alpha=50
+
+        # 9.2 逐点计算 alpha
+        vols  = vol_df['vol'].values
+        lows  = vol_df['lower'].values
+        highs = vol_df['upper'].values
+        alphas = [get_alpha(v, l, h) for v, l, h in zip(vols, lows, highs)]
+
+        # 9.3 根据当根 K 线涨跌生成 rgba 颜色串
+        opens  = df['open'].values
+        closes = df['close'].values
+        marker_colors = []
+        for c, o, a in zip(closes, opens, alphas):
+            if c > o:
+                marker_colors.append(f"rgba(0,200,0,{a})")    # 涨 -> 绿
+            elif c < o:
+                marker_colors.append(f"rgba(200,0,0,{a})")    # 跌 -> 红
+            else:
+                marker_colors.append(f"rgba(100,100,200,{a})")# 平 -> 蓝灰
+
+        # 9.4 主柱：scaled volume + 色彩透明度
+        fig.add_trace(
+            go.Bar(
+                x=df["datetime"],
+                y=vol_df["vol_scaled"],
+                marker_color=marker_colors,
+                name="Scaled Volume"
+            ),
+            row=2, col=1
+        )
+
+        # 9.5 SMA 线
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["sma_scaled"],
+                mode="lines",
+                line=dict(color="gray", width=1),
+                name="Volume MA"
+            ),
+            row=2, col=1
+        )
+
+        # 9.6 通道带填充：先画下轨（invisible）
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["lower_scaled"],
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False
+            ),
+            row=2, col=1
+        )
+        # 再画上轨并填充到上一条 trace
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["upper_scaled"],
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(173,216,230,0.2)",
+                name="Volume Band"
+            ),
+            row=2, col=1
+        )
+        # ----------------------------------------------------------
+
 
         # (C) 行 3: 动能指标
         mom_df = multiVwap.momentum_df.reindex(df.index)

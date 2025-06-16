@@ -31,7 +31,7 @@ MOM_EB  = True # 启用 bar colors
 
 # ========== 数据客户端 & multiVwap 实例 ==========
 client = SQLiteWALClient(db_path=DB_PATH,
-                         table="combined_9x" if use1x else "ohlcv")
+                         table="combined_1x" if use1x else "ohlcv")
 trade_client = None
 
 windowConfig = LHFrameStd.WindowConfig()
@@ -165,7 +165,7 @@ def update_graph(n):
         ]
         # 所有 vp/VWAP/STD 系列
         for name, color in {
-            **{k:'firebrick' for k in ["LFrame_vp_poc_series"]},
+            **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
             **{k:'magenta'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},

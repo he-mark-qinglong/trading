@@ -10,9 +10,9 @@ import vwap_calc
 class WindowConfig:
     def __init__(self):
         #34:21:9
-        self.window_tau_s = int(170*1.618)
-        self.window_tau_h = int(105*1.618) #int(self.window_tau_s / 3)
-        self.window_tau_l = int(45*1.618) #int(self.window_tau_h/3)
+        self.window_tau_s = int(340*1.618)
+        self.window_tau_h = int(210*1.618) #int(self.window_tau_s / 3)
+        self.window_tau_l = int(90*1.618) #int(self.window_tau_h/3)
 
 class MultiTFvp_poc:
     def __init__(self,
@@ -34,7 +34,7 @@ class MultiTFvp_poc:
         self.df = None
 
         # 各种结果的全量 Series（索引与 self.df 保持一致）
-        self.LFrame_vp_poc_series = pd.Series(dtype=float)
+        self.LFrame_vp_poc = pd.Series(dtype=float)
         self.HFrame_vp_poc       = pd.Series(dtype=float)
         self.SFrame_vp_poc       = pd.Series(dtype=float)
         self.slow_poc            = pd.Series(dtype=float)
@@ -142,7 +142,7 @@ class MultiTFvp_poc:
                 return old
             return pd.concat([old, new])
 
-        self.LFrame_vp_poc_series = take_new(self.LFrame_vp_poc_series, out['L'])
+        self.LFrame_vp_poc = take_new(self.LFrame_vp_poc, out['L'])
         self.HFrame_vp_poc       = take_new(self.HFrame_vp_poc,       out['H'])
         self.SFrame_vp_poc       = take_new(self.SFrame_vp_poc,       out['S'])
         self.slow_poc            = take_new(self.slow_poc,            out['slow'])
@@ -227,7 +227,7 @@ class MultiTFvp_poc:
         """
         self.df = None
         for attr in [
-            'LFrame_vp_poc_series','HFrame_vp_poc','SFrame_vp_poc',
+            'LFrame_vp_poc','HFrame_vp_poc','SFrame_vp_poc',
             'slow_poc','shigh_poc','hlow_poc','hhigh_poc'
         ]:
             setattr(self, attr, pd.Series(dtype=float))
@@ -241,7 +241,7 @@ class MultiTFvp_poc:
     # 1) volume核心指标计算
     def compute_volume_channels(self, df: pd.DataFrame, 
                                 volume_map_period: int = 240, 
-                                volume_scale: float = 0.02
+                                volume_scale: float = 0.9
                                 ) -> pd.DataFrame:
         """
         在原 df 上计算：
@@ -298,13 +298,13 @@ class MultiTFvp_poc:
             return s.rolling(per).mean()
 
         # --- 1) 计算 src ---
-        src = self.LFrame_vp_poc_series.reindex(df.index)
+        src = self.LFrame_vp_poc.reindex(df.index)
         if sm:
             src = ema(src, smp)
 
         # --- 2) 计算 fast/slow momentum ---
         p = 2 * momentumPeriod + 1
-        base_sma = sma(self.LFrame_vp_poc_series, p).reindex(df.index)
+        base_sma = sma(self.LFrame_vp_poc, p).reindex(df.index)
         df['amom']  = 100 * (src / base_sma - 1)
         df['amoms'] = sma(df['amom'], signalPeriod)
 
@@ -363,7 +363,7 @@ def plot_all_multiftfpoc_vars(multFramevp_poc,
 
     # 其它 series 也同理
     vars_to_plot = [
-      'LFrame_vp_poc_series','SFrame_vp_poc', 'SFrame_vwap_up_poc',
+      'LFrame_vp_poc','SFrame_vp_poc', 'SFrame_vwap_up_poc',
       'SFrame_vwap_up_sl','SFrame_vwap_down_poc','SFrame_vwap_down_sl',
       'HFrame_vwap_up_getin','HFrame_vwap_up_sl','HFrame_vwap_up_sl2',
       'HFrame_vwap_down_getin','HFrame_vwap_down_sl','HFrame_vwap_down_sl2',
@@ -411,7 +411,7 @@ def plot_all_multiftfpoc_vars(multFramevp_poc,
 
     # 2) 其它 series
     colors = { # … 同上略 …
-        'LFrame_vp_poc_series':'yellow','SFrame_vp_poc':'purple',
+        'LFrame_vp_poc':'yellow','SFrame_vp_poc':'purple',
         # …
     }
     for var in vars_to_plot:

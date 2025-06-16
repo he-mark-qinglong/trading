@@ -18,11 +18,11 @@ BINANCE_WS      = f"wss://fstream.binance.com/ws/{SYMBOL_BINANCE}@aggTrade"
 MAX_ROWS        = 100_000
 
 # SQLite 客户端
-okx_1x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_1x")
+# okx_1x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_1x")
 okx_9x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_9x")
-binance_1x_cli  = SQLiteWALClient(DB_PATH, table="binance_1x")
+# binance_1x_cli  = SQLiteWALClient(DB_PATH, table="binance_1x")
 binance_9x_cli  = SQLiteWALClient(DB_PATH, table="binance_9x")
-cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
+# cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
 cmb_9x_cli      = SQLiteWALClient(DB_PATH, table="combined_9x")
 # drop_orderbook_snap(DB_PATH, "combined_1x")
 async def collect_okx(queue: asyncio.Queue):
@@ -56,7 +56,7 @@ async def collect_okx(queue: asyncio.Queue):
                         row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
 
                         # 写 OKX 表
-                        okx_1x_cli.append_df_ignore(pd.DataFrame([row]))
+                        # okx_1x_cli.append_df_ignore(pd.DataFrame([row]))
                         # print('okx 1x ', pd.DataFrame([row]))
                         # 推到队列
                         await queue.put(("1x", "okx", row))
@@ -104,7 +104,7 @@ async def collect_binance(queue: asyncio.Queue):
                         v    = round(df.vol.sum(),6)
                         row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
 
-                        binance_1x_cli.append_df_ignore(pd.DataFrame([row]))
+                        # binance_1x_cli.append_df_ignore(pd.DataFrame([row]))
                         # print('bnr 1x', pd.DataFrame([row]))
                         await queue.put(("1x", "binance", row))
 
@@ -165,7 +165,8 @@ async def merger(queue: asyncio.Queue):
 
         cmb = {"ts": ts, "open": o, "high": h, "low": l, "close": c, "vol": v}
         df  = pd.DataFrame([cmb])
-        target = cmb_1x_cli if level=="1x" else cmb_9x_cli
+        # target = cmb_1x_cli if level=="1x" else cmb_9x_cli
+        target = cmb_9x_cli
         target.append_df_ignore(df)
         print(f"[MERGED-timeout] {level} @ {ts}  okx={'Y' if okr else 'N'}  bin={'Y' if bnr else 'N'}")
 
@@ -195,8 +196,9 @@ async def merger(queue: asyncio.Queue):
             }
             df = pd.DataFrame([cmb])
             if level == "1x":
-                print("1x combined\t", df)
-                cmb_1x_cli.append_df_ignore(df)
+                pass
+                # print("1x combined\t", df)
+                # cmb_1x_cli.append_df_ignore(df)
             else:
                 print("9x combined\t", df)
                 cmb_9x_cli.append_df_ignore(df)

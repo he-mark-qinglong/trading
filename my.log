@@ -1663,3 +1663,41 @@
 
 2025-06-16 00:22:22,622 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-16 03:42:41,861 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2529.296891154996, 'price0', 2529.296891154996, 342, 'buylong')
+2025-06-16 03:43:43,020 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2529.18409617047, 'price0', 2529.18409617047, 343, 'buylong')
+2025-06-16 03:44:44,200 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2529.0716786179164, 'price0', 2529.0716786179164, 344, 'buylong')
+2025-06-16 03:45:45,412 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2528.849155372553, 'price0', 2528.849155372553, 345, 'buylong')
+2025-06-16 03:46:46,699 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2528.739284978867, 'price0', 2528.739284978867, 346, 'buylong')
+2025-06-16 03:47:48,071 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2528.6310114934827, 'price0', 2528.6310114934827, 347, 'buylong')
+2025-06-16 03:52:33,315 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.9155693225525, 'price0', 2527.9155693225525, 352, 'buylong')
+2025-06-16 03:53:35,253 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.8184638766497, 'price0', 2527.8184638766497, 353, 'buylong')
+2025-06-16 03:54:36,579 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.722540557995, 'price0', 2527.722540557995, 354, 'buylong')
+2025-06-16 03:55:37,897 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.533740190027, 'price0', 2527.533740190027, 355, 'buylong')
+2025-06-16 03:56:39,114 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.440236309435, 'price0', 2527.440236309435, 356, 'buylong')
+2025-06-16 03:57:40,278 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2527.347660554925, 'price0', 2527.347660554925, 357, 'buylong')
+2025-06-16 04:03:10,221 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2526.667578875266, 'price0', 2526.667578875266, 403, 'buylong')
+2025-06-16 04:04:11,449 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2526.588689915092, 'price0', 2526.588689915092, 404, 'buylong')
+2025-06-16 04:05:12,896 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2526.511161350712, 'price0', 2526.511161350712, 405, 'buylong')
+2025-06-16 04:06:14,122 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2526.4346290537596, 'price0', 2526.4346290537596, 406, 'buylong')
+2025-06-16 04:07:15,478 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2526.2760248170557, 'price0', 2526.2760248170557, 407, 'buylong')
+2025-06-16 04:08:16,714 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2524.637974721158, 'price0', 2524.637974721158, 408, 'buylong')
+2025-06-16 04:09:18,293 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2525.888723902114, 'price0', 2525.888723902114, 409, 'buylong')
+2025-06-16 04:10:19,464 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2525.508181020917, 'price0', 2525.508181020917, 410, 'buylong')
+2025-06-16 04:11:20,734 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2525.3204581808222, 'price0', 2525.3204581808222, 411, 'buylong')
+2025-06-16 04:12:21,955 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2523.392921018937, 'price0', 2523.392921018937, 412, 'buylong')
+2025-06-16 04:13:23,177 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2523.1423088804995, 'price0', 2523.1423088804995, 413, 'buylong')
+2025-06-16 04:14:24,284 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2524.4179429454266, 'price0', 2524.4179429454266, 414, 'buylong')
+2025-06-16 04:15:25,589 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2522.3570804376614, 'price0', 2522.3570804376614, 415, 'buylong')
+2025-06-16 04:16:26,806 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2522.030686888094, 'price0', 2522.030686888094, 416, 'buylong')
+2025-06-16 04:17:27,841 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2521.7068202787664, 'price0', 2521.7068202787664, 417, 'buylong')
+2025-06-16 12:37:26,611 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-16 13:08:02,089 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2597.0430294691487, 'price0', 2597.0430294691487, 1307, 'buyshort')
+2025-06-16 13:08:04,352 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2496.9349960382765, 'price0', 2496.9349960382765, 1307, 'buylong')
+2025-06-16 13:10:15,611 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2596.6136540614507, 'price0', 2596.6136540614507, 1310, 'buyshort')
+2025-06-16 13:10:17,722 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2498.5390518268023, 'price0', 2498.5390518268023, 1310, 'buylong')
+2025-06-16 13:37:20,327 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-16 14:11:09,837 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2537.4544742012927, 'price0', 2537.4544742012927, 1411, 'buylong')
+2025-06-16 20:12:30,386 - INFO - Dash is running on http://127.0.0.1:8050/
+

@@ -25,9 +25,12 @@ lock = threading.Lock()
 import logging
 import traceback# traceback.print_exc()
 from collections import deque
+import builtins
+
 
 from db_client import SQLiteWALClient
-from strategy import MultiFramePOCStrategy, RuleConfig
+# from strategy import MultiFramePOCStrategy, RuleConfig
+from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -41,9 +44,9 @@ from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, calc_atr, Windo
 
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND #+ 1000
+LIMIT_K_N = 700 + LIMIT_K_N_APPEND #+ 1000
 DEBUG = False 
-# DEBUG = True
+DEBUG = True
 
 
 def get_martingale_coefficient(counter, base=1.06, delta=0.05):
@@ -83,7 +86,8 @@ class trade_coin(object):
                                             window_SFrame=windowConfig.window_tau_s)
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
         self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 20 * 3)
-        
+        self.strategy_log_interval = 0
+
         if 'ETH' in self.symbol:
             self.asset_coe=20
         else:
@@ -136,7 +140,7 @@ class trade_coin(object):
 
             self.coin_data = self.get_kline(init=True)
             self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
-
+            
             #debug ploting content
             # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
             if 1:
@@ -168,10 +172,22 @@ class trade_coin(object):
                     open2equity_pct = all_values/self.usdt_total
                     sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
                     sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
+                    
+                    if self.strategy_log_interval % 20 == 0:
+                        print('(((())))'*10, self.strategy.eval_history[-1])
+                        with builtins.open("eval_logs.json","w") as f:
+                            import json
+                            json.dump(self.strategy.eval_history[-1], f, default=str)
+                        if self.strategy_log_interval > 9999999:
+                            self.strategy_log_interval = 0
+                    self.strategy_log_interval += 1
                 else:
                     time.sleep(60)
                     sig_long = None
                     sig_short = None
+
+                
+                    
                 cur_SFrame_vwap_up_poc = self.multiFrameVwap.SFrame_vwap_up_poc.iloc[-1]
                 cur_SFrame_vwap_down_poc = self.multiFrameVwap.SFrame_vwap_down_poc.iloc[-1]
                 cur_HFrame_vwap_down_sl = self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-1]
@@ -274,9 +290,9 @@ class trade_coin(object):
                         short_profit = upl_short / notionalUsd_short
 
                         # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
-                        consecutive_belowsl = (self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).sum() >= 2
+                        consecutive_belowsl = (self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).sum() >= 2
                         # 2) 中心线止盈
-                        consecutive_cross_center = (self.multiFrameVwap.HFrame_vp_poc.iloc[-6:] > close.iloc[-6:]).sum() >= 4
+                        consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:] > close.iloc[-6:]).sum() >= 4
                         cross_center_and_tp = consecutive_cross_center \
                                             and short_profit > stop_profit
                         # 3) 下轨止盈
@@ -291,6 +307,7 @@ class trade_coin(object):
 
                         if consecutive_belowsl:
                             close_amount = amount_short
+                            price0 = cur_SFrame_vwap_down_poc
                         elif below_sl:
                             close_amount = min(3, amount_short)
                         elif cross_down_and_tp:
@@ -314,15 +331,15 @@ class trade_coin(object):
                         long_profit = upl_long / notionalUsd_long
 
                         # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
-                        consecutive_upponsl = (self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).sum() >= 2  
+                        consecutive_upponsl = (self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).sum() >= 2  
                         # 2) 中心线止盈：收盘在中心线上方，且利润达 stop_profit
-                        consecutive_cross_center = (self.multiFrameVwap.HFrame_vp_poc.iloc[-6:]  < close.iloc[-6:]).sum() >= 4
+                        consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:]  < close.iloc[-6:]).sum() >= 4
                         cross_center_and_tp = consecutive_cross_center and (long_profit > stop_profit)
                         # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
                         cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
                                         and (long_profit > fee_require_profit)
                         # 4) 常规止损（突破 HFrame 上轨），不论盈亏都平
-                        upon_sl = (cur_close >= cur_HFrame_vwap_up_sl)
+                        upon_sl = (cur_close >= cur_SFrame_vwap_up_poc)
 
                         # 默认不平仓
                         close_amount = 0
@@ -331,6 +348,7 @@ class trade_coin(object):
                         if consecutive_upponsl:
                             # ① 连续突破 → 全部平
                             close_amount = amount_long
+                            price0 = cur_SFrame_vwap_up_poc
                         elif upon_sl:
                             # ④ 常规止损 → 最多平 3
                             close_amount = min(3, amount_long)

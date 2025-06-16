@@ -27,6 +27,8 @@ class OrderSignal:
     order_type: str                         # "limit"
     order_time: float                       # 发单时间戳
     tier_explain: EntryTier                 # 明确解释开仓的原因
+
+@dataclass
 class RuleConfig:
     #注意：conservative应该要在前面，因为后续循环索引规则的时候需要先判断突破次数多的情况，
     #     如果顺序是aggressive在前面，conservative可能会因为consec_count更大而一直被aggressive的规则给提前判断return,而无法被循环遍历到。
