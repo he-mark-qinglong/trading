@@ -11,22 +11,20 @@ from db_client import SQLiteWALClient, drop_orderbook_snap
 # 配置
 SYMBOL_OKX      = "ETH-USDT-SWAP"
 SYMBOL_BINANCE  = "ethusdt"
-INTERVAL        = 5        # 秒
+INTERVAL        = 150        # 秒
 DB_PATH         = f"{SYMBOL_OKX}.db"
 OKX_WS          = "wss://ws.okx.com:8443/ws/v5/public"
 BINANCE_WS      = f"wss://fstream.binance.com/ws/{SYMBOL_BINANCE}@aggTrade"
 MAX_ROWS        = 100_000
 
-# SQLite 客户端
-# okx_1x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_1x")
-okx_9x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_9x")
-# binance_1x_cli  = SQLiteWALClient(DB_PATH, table="binance_1x")
-binance_9x_cli  = SQLiteWALClient(DB_PATH, table="binance_9x")
+
+okx_30x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_30x")
+binance_30x_cli  = SQLiteWALClient(DB_PATH, table="binance_30x")
 # cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
-cmb_9x_cli      = SQLiteWALClient(DB_PATH, table="combined_9x")
-# drop_orderbook_snap(DB_PATH, "combined_1x")
+cmb_30x_cli      = SQLiteWALClient(DB_PATH, table="combined_30x")
+# drop_orderbook_snap(DB_PATH, "combined_30x")
 async def collect_okx(queue: asyncio.Queue):
-    """订阅 OKX trades，产出 1×、9× K 线，推到 queue"""
+    """订阅 OKX trades，产出 1×、30× K 线，推到 queue"""
     while True:
         try:
             async with websockets.connect(OKX_WS, ping_interval=20, ping_timeout=20) as ws:
@@ -56,22 +54,11 @@ async def collect_okx(queue: asyncio.Queue):
                         row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
 
                         # 写 OKX 表
-                        # okx_1x_cli.append_df_ignore(pd.DataFrame([row]))
-                        # print('okx 1x ', pd.DataFrame([row]))
+                        okx_30x_cli.append_df_ignore(pd.DataFrame([row]))
+                        # print('okx 30x ', pd.DataFrame([row]))
                         # 推到队列
-                        await queue.put(("1x", "okx", row))
+                        await queue.put(("30x", "okx", row))
 
-                        agg_buf.append(row)
-                        if len(agg_buf)==9:
-                            ob,cb = agg_buf[0], agg_buf[-1]
-                            hh = max(r["high"] for r in agg_buf)
-                            ll = min(r["low"]  for r in agg_buf)
-                            vv = round(sum(r["vol"] for r in agg_buf),2)
-                            row9={"ts":ob["ts"],"open":ob["open"],
-                                "high":hh,"low":ll,"close":cb["close"],"vol":vv}
-                            okx_9x_cli.append_df_ignore(pd.DataFrame([row9]))
-                            await queue.put(("9x", "okx", row9))
-                            agg_buf.clear()
 
                         cache, ts0 = [], now
         except (websockets.exceptions.ConnectionClosedError,
@@ -85,11 +72,11 @@ async def collect_okx(queue: asyncio.Queue):
             await asyncio.sleep(INTERVAL)
 
 async def collect_binance(queue: asyncio.Queue):
-    """订阅 Binance aggTrade，产出 1×、9× K 线，推到 queue"""
+    """订阅 Binance aggTrade，产出 1×、30× K 线，推到 queue"""
     while True:
         try:
             async with websockets.connect(BINANCE_WS, ping_interval=20, ping_timeout=20) as ws:
-                cache, agg_buf = [], []
+                cache = []
                 ts0 = int(time.time())
                 print("[Binance] subscribed")
                 while True:
@@ -104,21 +91,10 @@ async def collect_binance(queue: asyncio.Queue):
                         v    = round(df.vol.sum(),6)
                         row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
 
-                        # binance_1x_cli.append_df_ignore(pd.DataFrame([row]))
-                        # print('bnr 1x', pd.DataFrame([row]))
-                        await queue.put(("1x", "binance", row))
+                        binance_30x_cli.append_df_ignore(pd.DataFrame([row]))
+                        # print('bnr 30x', pd.DataFrame([row]))
+                        await queue.put(("30x", "binance", row))
 
-                        agg_buf.append(row)
-                        if len(agg_buf)==9:
-                            ob,cb = agg_buf[0], agg_buf[-1]
-                            hh = max(r["high"] for r in agg_buf)
-                            ll = min(r["low"]  for r in agg_buf)
-                            vv = round(sum(r["vol"] for r in agg_buf),6)
-                            row9={"ts":ob["ts"],"open":ob["open"],
-                                "high":hh,"low":ll,"close":cb["close"],"vol":vv}
-                            binance_9x_cli.append_df_ignore(pd.DataFrame([row9]))
-                            await queue.put(("9x", "binance", row9))
-                            agg_buf.clear()
 
                         cache, ts0 = [], now
         except (websockets.exceptions.ConnectionClosedError,
@@ -130,7 +106,7 @@ async def collect_binance(queue: asyncio.Queue):
         except Exception as e:
             print(f"[Binance] 未知异常，重连中：{e!r}")
             await asyncio.sleep(INTERVAL)
-MAX_WAIT = 7  # 超时秒数
+MAX_WAIT = 15  # 超时秒数
 
 async def merger(queue: asyncio.Queue):
     """
@@ -138,8 +114,8 @@ async def merger(queue: asyncio.Queue):
       - 缓存在 storage[level][ts][source] = row
       - 第一条到达时注册超时，MAX_WAIT 秒后若仍不完整，则在 _on_timeout 里处理
     """
-    storage     = {"1x": {}, "9x": {}}
-    first_arrive= {"1x": {}, "9x": {}}
+    storage     = {"1x": {}, "30x": {}}
+    first_arrive= {"1x": {}, "30x": {}}
     loop = asyncio.get_running_loop()
 
     def _on_timeout(level, ts):
@@ -165,8 +141,7 @@ async def merger(queue: asyncio.Queue):
 
         cmb = {"ts": ts, "open": o, "high": h, "low": l, "close": c, "vol": v}
         df  = pd.DataFrame([cmb])
-        # target = cmb_1x_cli if level=="1x" else cmb_9x_cli
-        target = cmb_9x_cli
+        target = cmb_30x_cli
         target.append_df_ignore(df)
         print(f"[MERGED-timeout] {level} @ {ts}  okx={'Y' if okr else 'N'}  bin={'Y' if bnr else 'N'}")
 
@@ -195,13 +170,9 @@ async def merger(queue: asyncio.Queue):
                 "vol":   okr["vol"] + bnr["vol"],
             }
             df = pd.DataFrame([cmb])
-            if level == "1x":
-                pass
-                # print("1x combined\t", df)
-                # cmb_1x_cli.append_df_ignore(df)
-            else:
-                print("9x combined\t", df)
-                cmb_9x_cli.append_df_ignore(df)
+        
+            print("30x combined\t", df)
+            cmb_30x_cli.append_df_ignore(df)
             print(f"[MERGED] {level} @ {ts}  OKX:{okr['vol']}  BIN:{bnr['vol']}")
 
             # 清理：后续即便 _on_timeout 触发也不会重复写

@@ -18,14 +18,14 @@ from db_client import SQLiteWALClient
 
 
 BASIC_INTERVAL = 5
-use9x = True
+use30x = True
 symbol = "ETH-USDT-SWAP"
 
 DEBUG= True
 DEBUG = False
 
 DB_PATH = f'{symbol}.db'
-client = SQLiteWALClient(db_path=DB_PATH, table="combined_9x" if   use9x else "ohlcv")
+client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x" if   use30x else "ohlcv")
 
 trade_client = None
 
@@ -35,13 +35,13 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
                                      window_SFrame=windowConfig.window_tau_s)
 
 
-LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 39)
-LIMIT_K_N = 700 + LIMIT_K_N_APPEND  #+ 3000
+LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 444)
+LIMIT_K_N = 3000 + LIMIT_K_N_APPEND  #+ 3000
 
 
 def read_and_sort_df(is_append=True):
     df = client.read_df(limit=LIMIT_K_N_APPEND if is_append else LIMIT_K_N, order_by="ts DESC")
-    # print('df.head:', df.head)
+    print('df.head:', df.head)
     # 2. 检查必须列
     required = {"ts","open","high","low","close","vol"}
     if not required.issubset(df.columns):
@@ -58,7 +58,7 @@ def read_and_sort_df(is_append=True):
 
 app = Dash(__name__)
 app.layout = html.Div([
-    html.H2(f"OKX { 9*BASIC_INTERVAL if   use9x else BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
+    html.H2(f"OKX { 30*BASIC_INTERVAL if   use30x else BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
     dcc.ConfirmDialogProvider(
         children=html.Button("一键平仓", id="btn-close", n_clicks=0),
         id="confirm-close",
@@ -66,8 +66,8 @@ app.layout = html.Div([
     ),
     html.Div(id="close-status", style={"marginTop": "5px", "color": "green"}),
     dcc.Graph(id="kline-graph"),
-    dcc.Interval(id='interval', interval=(8 * BASIC_INTERVAL if   use9x else BASIC_INTERVAL)*1000, n_intervals=0),
-    html.Div(id="status-msg", style={"color": "red", "marginTop": 9})
+    dcc.Interval(id='interval', interval=(30 * BASIC_INTERVAL if   use30x else BASIC_INTERVAL)*1000, n_intervals=0),
+    html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
 ])
 
 # 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
@@ -297,4 +297,4 @@ if __name__ == '__main__':
     multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
 
 
-    app.run(debug=True, port=8050 if   use9x else 8051)
+    app.run(debug=True, port=8050 if   use30x else 8051)
