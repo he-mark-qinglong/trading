@@ -368,7 +368,7 @@ class RuleConfig:
                         #单根暴跌 6 x atr
                         BarSpikeCondition(
                             df_attr="df",
-                            open_thresh="SFrame_vp_down_poc", open_cmp="below",
+                            open_thresh="SFrame_vwap_down_poc", open_cmp="below",
                             close_thresh="HFrame_vwap_down_getin", close_cmp="below",
                             atr_attr="atr", mult=6.0
                         ),
@@ -406,7 +406,7 @@ class RuleConfig:
                         #单根暴涨6 x atr
                         BarSpikeCondition(
                             df_attr="df",
-                            open_thresh="SFrame_vp_up_poc", open_cmp="below",
+                            open_thresh="SFrame_vwap_up_poc", open_cmp="below",
                             close_thresh="HFrame_vwap_down_getin", close_cmp="below",
                             atr_attr="atr", mult=6.0
                         ),

@@ -114,6 +114,9 @@ class trade_coin(object):
         self.coin_data = self.get_kline(init=True)
         self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
 
+
+        self.max_history_long_profit = 0
+        self.max_history_short_profit = 0
     def trade1(self):
         try:
             print('运行中',self.symbol)
@@ -278,99 +281,114 @@ class trade_coin(object):
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
                     
-                    stop_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 2)  
+                    exit_required_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 2)  
                     
                     ChineseTradeTime = False
                     center_tp_poc = self.multiFrameVwap.SFrame_vp_poc.iloc[-1]  #(self.multiFrameVwap.SFrame_vwap_up_getin.iloc[-1] - self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1])/2 + self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1]
                     NoneTradeTimeProfit = 0.0025
                     # if not ChineseTradeTime:
-                    #     stop_profit = min(stop_profit, 0.0025)  #20倍杠杆的4%，夜间盘看不到就当做马丁止盈吧。 后续加一下时间段来区分。
+                    #     exit_required_profit = min(exit_required_profit, 0.0025)  #20倍杠杆的4%，夜间盘看不到就当做马丁止盈吧。 后续加一下时间段来区分。
                     
                     if amount_short>0:
+                        def close_short(close_amount, price0, instantly = False):
+                            if close_amount > 0:
+                                model='sellshort'
+                                price=price0*(1-(-0.0001 if instantly else 0.0001))
+                                amount=max(close_amount, 1)
+                                symbol=self.symbol
+                                place_order=self.create_order1(symbol,price,amount,model)
+                                
+                                print(place_order,symbol,model)
+                                plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
+
                         short_profit = upl_short / notionalUsd_short
+                        if short_profit <= self.max_history_short_profit / 2 and self.max_history_short_profit > 0.004:
+                            close_short(amount_short, cur_close, instantly=True)
+                            self.max_history_short_profit = 0
+                        else:
+                            self.max_history_short_profit = max(self.max_history_short_profit, short_profit)
 
-                        # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
-                        consecutive_belowsl = (self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-3:] > close.iloc[-3:]).sum() >= 2
-                        # 2) 中心线止盈
-                        consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:] > close.iloc[-6:]).sum() >= 4
-                        cross_center_and_tp = consecutive_cross_center \
-                                            and short_profit > stop_profit
-                        # 3) 下轨止盈
-                        cross_down_and_tp = (cur_close <= cur_SFrame_vwap_down_poc) \
-                                            and (short_profit > fee_require_profit)
-                        # 4) 常规止损：跌破  cur_HFrame_vwap_down_sl（不论盈亏都平）
-                        below_sl = (cur_close <=  cur_HFrame_vwap_down_sl)
+                            # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
+                            consecutive_belowsl = (self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-3:].to_numpy() > close.iloc[-3:].to_numpy()).sum() >= 2
+                            # 2) 中心线止盈
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4
+                            cross_center_and_tp = consecutive_cross_center \
+                                                and short_profit > exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['lower_scaled'].iloc[-1]
+                            # 3) 下轨止盈
+                            cross_down_and_tp = (cur_close <= cur_SFrame_vwap_down_poc) \
+                                                and (short_profit > fee_require_profit)
+                            # 4) 常规止损：跌破  cur_HFrame_vwap_down_sl（不论盈亏都平）
+                            below_sl = (cur_close <=  cur_HFrame_vwap_down_sl)
 
-                        # ---- 执行顺序：①连续突破 ②中心止盈 ③下轨止盈 ④常规止损
-                        close_amount = 0
-                        price0       = cur_close
+                            # ---- 执行顺序：①连续突破 ②中心止盈 ③下轨止盈 ④常规止损
+                            close_amount = 0
+                            price0       = cur_close
 
-                        if consecutive_belowsl:
-                            close_amount = amount_short
-                            price0 = cur_SFrame_vwap_down_poc
-                        elif below_sl:
-                            close_amount = min(3, amount_short)
-                        elif cross_down_and_tp:
-                            close_amount = min(2, amount_short)
-                            price0       = cur_SFrame_vwap_down_poc
-                        # elif cross_center_and_tp:
-                        #     close_amount = 1
-                        #     price0 = cur_low
+                            if consecutive_belowsl:
+                                close_amount = amount_short
+                                price0 = cur_SFrame_vwap_down_poc
+                            elif below_sl:
+                                close_amount = min(3, amount_short)
+                            elif cross_down_and_tp:
+                                close_amount = min(2, amount_short)
+                                price0       = cur_SFrame_vwap_down_poc
+                            elif cross_center_and_tp:
+                                close_amount = amount_long
+                                price0 = cur_low
 
-                        # 如果 close_amount>0，就发平仓单
-                        if close_amount > 0:
-                            model='sellshort'
-                            price=price0*(1-0.0001)
-                            amount=max(close_amount, 1)
-                            symbol=self.symbol
-                            place_order=self.create_order1(symbol,price,amount,model)
-                            
-                            print(place_order,symbol,model)
-                            plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
+                            close_short(close_amount, price0)
                     if amount_long>0:
+                        def close_long(close_amount, price0, instantly = False):
+                            if close_amount > 0:
+                                model='selllong'
+                                price=price0*(1.00 + (-0.0001 if instantly else 0.0001))
+                                amount=max(close_amount, 1)
+                                symbol=self.symbol
+                                place_order=self.create_order1(symbol,price,amount,model)
+                                
+                                print(place_order,symbol,model)
+                                plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
+
                         long_profit = upl_long / notionalUsd_long
 
-                        # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
-                        consecutive_upponsl = (self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-3:] < close.iloc[-3:]).sum() >= 2  
-                        # 2) 中心线止盈：收盘在中心线上方，且利润达 stop_profit
-                        consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:]  < close.iloc[-6:]).sum() >= 4
-                        cross_center_and_tp = consecutive_cross_center and (long_profit > stop_profit)
-                        # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
-                        cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
-                                        and (long_profit > fee_require_profit)
-                        # 4) 常规止损（突破 HFrame 上轨），不论盈亏都平
-                        upon_sl = (cur_close >= cur_SFrame_vwap_up_poc)
+                        if long_profit <= self.max_history_long_profit / 2 and self.max_history_long_profit > 0.004:
+                            close_long(amount_long, cur_close, instantly = True)
+                            self.max_history_long_profit = 0
+                        else:
+                            self.max_history_long_profit = max(self.max_history_long_profit, long_profit)
 
-                        # 默认不平仓
-                        close_amount = 0
-                        price0       = cur_close
+                            # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
+                            consecutive_upponsl = (self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
+                            # 2) 中心线止盈：收盘在中心线上方，且利润达 exit_required_profit
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4
+                            cross_center_and_tp = consecutive_cross_center and (long_profit > exit_required_profit)
+                            # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
+                            cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
+                                            and (long_profit > fee_require_profit) and  exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['lower_scaled'].iloc[-1]
+                            # 4) 常规止损（突破 HFrame 上轨），不论盈亏都平
+                            upon_sl = (cur_close >= cur_SFrame_vwap_up_poc)
 
-                        if consecutive_upponsl:
-                            # ① 连续突破 → 全部平
-                            close_amount = amount_long
-                            price0 = cur_SFrame_vwap_up_poc
-                        elif upon_sl:
-                            # ④ 常规止损 → 最多平 3
-                            close_amount = min(3, amount_long)
-                        elif cross_up_and_tp:
-                            # ③ SFrame 上轨止盈 → 最多平 2
-                            close_amount = min(2, amount_long)
-                            price0       = cur_SFrame_vwap_up_poc
-                        # elif cross_center_and_tp:
-                        #     # ② 中心止盈 → 平 1
-                        #     close_amount = 1
-                        #     price0 = cur_high
+                            # 默认不平仓
+                            close_amount = 0
+                            price0       = cur_close
+
+                            if consecutive_upponsl:
+                                # ① 连续突破 → 全部平
+                                close_amount = amount_long
+                                price0 = cur_SFrame_vwap_up_poc
+                            elif upon_sl:
+                                # ④ 常规止损 → 最多平 3
+                                close_amount = min(3, amount_long)
+                            elif cross_up_and_tp:
+                                # ③ SFrame 上轨止盈 → 最多平 2
+                                close_amount = min(2, amount_long)
+                                price0       = cur_SFrame_vwap_up_poc
+                            elif cross_center_and_tp:
+                                # ② 中心止盈 → 平 1
+                                close_amount = amount_long
+                                price0 = cur_high
                         
-                        # 如果需要平仓，再发单
-                        if close_amount > 0:
-                            model='selllong'
-                            price=price0*(1.00 + 0.0001)
-                            amount=max(close_amount, 1)
-                            symbol=self.symbol
-                            place_order=self.create_order1(symbol,price,amount,model)
-                            
-                            print(place_order,symbol,model)
-                            plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
+                            close_long(close_amount, price0)
 
                     
                     if ((upl_long + upl_short)/self.usdt_total<-0.30) or self.asset_normal==0 :

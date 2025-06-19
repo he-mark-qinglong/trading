@@ -144,7 +144,7 @@ async def merger(queue: asyncio.Queue):
         target = cmb_30x_cli
         target.append_df_ignore(df)
         print(f"[MERGED-timeout] {level} @ {ts}  okx={'Y' if okr else 'N'}  bin={'Y' if bnr else 'N'}")
-
+        print(df)
     while True:
         level, src, row = await queue.get()
         ts = row["ts"]
