@@ -58,69 +58,28 @@ def read_and_sort_df(is_append=True):
     df["datetime"] = pd.to_datetime(df["ts"], unit="s")
     df = df.set_index("ts", drop=True).sort_index()
     return df
+# 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
+colors = {
+    'LFrame_vp_poc':     'firebrick',
+    'SFrame_vp_poc':            'purple',
 
-def ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
+    'SFrame_vwap_up_poc':          'blue',
+    # 'SFrame_vwap_up_getin':    'yellow',
+    # 'SFrame_vwap_up_sl':       'white',
+    'SFrame_vwap_down_poc':        'blue',
+    # 'SFrame_vwap_down_getin':  'deepskyblue',
+    # 'SFrame_vwap_down_sl':     'seagreen',
 
-def sma(series: pd.Series, period: int) -> pd.Series:
-    return series.rolling(period).mean()
-
-def anchored_momentum(
-    df: pd.DataFrame,
-    poc_series: pd.Series,
-    l: int, sl: int,
-    sm: bool, smp: int,
-    sh: bool, eb: bool
-) -> pd.DataFrame:
-    """
-    计算 amom, amoms, hl, hlc
-    """
-    out = pd.DataFrame(index=df.index)
-    src = poc_series.reindex(df.index)
-    if sm:
-        src = ema(src, smp)
-    p = 2*l + 1
-    out["amom"]  = 100 * ( src / sma(poc_series, p).reindex(df.index) - 1 )
-    out["amoms"] = sma(out["amom"], sl)
-
-    # 柱状图 hl
-    out["hl"] = 0.0
-    if sh:
-        pos = (out["amom"]>out["amoms"]) & (out["amom"]>0) & (out["amoms"]>0)
-        neg = (out["amom"]<out["amoms"]) & (out["amom"]<0) & (out["amoms"]<0)
-        out.loc[pos, "hl"] = np.minimum(out.loc[pos,"amom"],  out.loc[pos,"amoms"])
-        out.loc[neg, "hl"] = np.maximum(out.loc[neg,"amom"],  out.loc[neg,"amoms"])
-    # bar-color
-    out["hlc"] = None
-    fast_above = out["amom"] > out["amoms"]
-    for idx, (fa, a, s) in enumerate(zip(fast_above, out["amom"], out["amoms"])):
-        if fa:
-            out.iat[idx, out.columns.get_loc("hlc")] = "green" if a>=0 else "orange"
-        else:
-            out.iat[idx, out.columns.get_loc("hlc")] = "orange" if a>=0 else "red"
-    if not eb:
-        out["hlc"] = None
-
-    return out
-
-# ========== Dash App ==========
-app = Dash(__name__)
-app.layout = html.Div([
-    html.H2(f"OKX {BASIC_INTERVAL if not use1x else 1*BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
-    dcc.ConfirmDialogProvider(
-        children=html.Button("一键平仓", id="btn-close"),
-        id="confirm-close",
-        message="⚠️ 确认要全部平仓？此操作不可撤销！"
-    ),
-    html.Div(id="close-status", style={"marginTop":"5px","color":"green"}),
-    dcc.Graph(id="kline-graph"),
-    dcc.Interval(
-        id="interval",
-        interval=(8*BASIC_INTERVAL if use1x else BASIC_INTERVAL)*1000,
-        n_intervals=0
-    ),
-    html.Div(id="status-msg", style={"color":"red","marginTop":1})
-])
+    'HFrame_vwap_up_poc':          'magenta',
+    'HFrame_vwap_up_getin':        'deeppink',
+    'HFrame_vwap_up_sl':       'orangered',
+    'HFrame_vwap_up_sl2':       'orangered',
+    'HFrame_vwap_down_poc':        'magenta',  #'teal',
+    'HFrame_vwap_down_getin':  'turquoise',
+    'HFrame_vwap_down_sl':     'darkslategray',
+    'HFrame_vwap_down_sl2':     'darkslategray',
+}
+vars_to_plot = list(colors.keys())
 
 @app.callback(
     Output("kline-graph", "figure"),
@@ -145,7 +104,7 @@ def update_graph(n):
 
         # --- 2. 子图：3 行 ---
         fig = make_subplots(
-            rows=3, cols=1, shared_xaxes=True,
+            rows=3, cols=1, shared_xaxes=True, shared_yaxes=False,
             vertical_spacing=0.08,
             row_heights=[0.6, 0.2, 0.2],
             subplot_titles=("K-line + vp_poc/VWAP", "Volume", "Anchored Momentum")
@@ -157,19 +116,18 @@ def update_graph(n):
             low=df["low"], close=df["close"],
             name="K-line"
         ), row=1, col=1)
-        basic_colors = [
-            'red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet',
-            'pink', 'brown', 'black', 'white', 'gray', 'cyan', 'magenta',
-            'lime', 'navy', 'maroon', 'olive', 'teal', 'purple', 'gold',
-            'silver', 'coral', 'salmon', 'turquoise', 'chocolate', 'khaki'
-        ]
         # 所有 vp/VWAP/STD 系列
         for name, color in {
             **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
-            **{k:'magenta'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            **{k:'magenta'    for k in ["HFrame_vp_poc"]},
+            **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            **{k:'deeppink'   for k in ["HFrame_vwap_up_getin","HFrame_vwap_down_getin"]},
+            
             **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'khaki'   for k in ["SFrame_vwap_up_sl","SFrame_vwap_down_sl"]}
+            **{k:'khaki'   for k in ["SFrame_vwap_up_sl","SFrame_vwap_down_sl"]},
+            **{k:'darkslategray'   for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
+            
         }.items():
             series = getattr(multiVwap, name, None)
             if isinstance(series, pd.Series):
@@ -181,64 +139,102 @@ def update_graph(n):
                 ), row=1, col=1)
 
         # (B) 行 2: 成交量柱 + 通道
-        vol_df = multiVwap.vol_df.loc[df.index]
-        def get_alpha(v, lo, hi):
-            return 30/255 if v<lo else 254/255 if v>hi else 124/255
-        vols = vol_df["vol"].values
-        lows = vol_df["lower"].values
-        highs= vol_df["upper"].values
-        alphas = [get_alpha(v,l,h) for v,l,h in zip(vols,lows,highs)]
-        ops = df["open"].values; cls = df["close"].values
-        colors_bar = [
-            f"rgba({0 if c>o else 200},{200 if c>o else 0},0,{a})"
-            if c!=o else f"rgba(100,100,200,{a})"
-            for c,o,a in zip(cls,ops,alphas)
-        ]
-        fig.add_trace(go.Bar(
-            x=df["datetime"], y=vol_df["vol_scaled"],
-            marker_color=colors_bar, name="Vol"
-        ), row=2, col=1)
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["sma_scaled"],
-            mode="lines", line=dict(color="gray",width=1), name="Vol MA"
-        ), row=2, col=1)
-        # 通道填充
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["lower_scaled"],
-            mode="lines", line=dict(width=0), showlegend=False
-        ), row=2, col=1)
-        fig.add_trace(go.Scatter(
-            x=df["datetime"], y=vol_df["upper_scaled"],
-            mode="lines", line=dict(width=0),
-            fill="tonexty", fillcolor="rgba(173,216,230,0.4)",
-            name="Vol Band"
-        ), row=2, col=1)
+        # ------------------------ 替换这一段 ------------------------
+        # 9. 添加成交量（使用 vol_df 渲染）
+        vol_df = multiVwap.vol_df.loc[df.index]  # 对齐索引
+
+        # 9.1 透明度函数：Pine 里是 0–255，这里归一到 0–1
+        def get_alpha(vol, low, high):
+            if vol < low:
+                return 1# 180/255    # alpha=80
+            elif vol > high:
+                return 1#30/255    # alpha=30
+            else:
+                return 1#100/255    # alpha=50
+
+        # 9.2 逐点计算 alpha
+        vols  = vol_df['vol'].values
+        lows  = vol_df['lower'].values
+        highs = vol_df['upper'].values
+        alphas = [get_alpha(v, l, h) for v, l, h in zip(vols, lows, highs)]
+
+        # 9.3 根据当根 K 线涨跌生成 rgba 颜色串
+        opens  = df['open'].values
+        closes = df['close'].values
+        marker_colors = []
+        for c, o, a in zip(closes, opens, alphas):
+            if c > o:
+                marker_colors.append(f"rgba(0,200,0,{a})")    # 涨 -> 绿
+            elif c < o:
+                marker_colors.append(f"rgba(200,0,0,{a})")    # 跌 -> 红
+            else:
+                marker_colors.append(f"rgba(100,100,200,{a})")# 平 -> 蓝灰
+
+        # 9.4 主柱：scaled volume + 色彩透明度
+        fig.add_trace(
+            go.Bar(
+                x=df["datetime"],
+                y=vol_df["vol_scaled"],
+                marker_color=marker_colors,
+                name="Scaled Volume"
+            ),
+            row=2, col=1
+        )
+
+        # 9.5 SMA 线
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["sma_scaled"],
+                mode="lines",
+                line=dict(color="gray", width=1),
+                name="Volume MA"
+            ),
+            row=2, col=1
+        )
+
+        # 9.6 通道带填充：先画下轨（invisible）
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["lower_scaled"],
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False
+            ),
+            row=2, col=1
+        )
+        # 再画上轨并填充到上一条 trace
+        fig.add_trace(
+            go.Scatter(
+                x=df["datetime"],
+                y=vol_df["upper_scaled"],
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(173,216,230,0.2)",
+                name="Volume Band"
+            ),
+            row=2, col=1
+        )
+        # ----------------------------------------------------------
+
 
         # (C) 行 3: 动能指标
         mom_df = multiVwap.momentum_df.reindex(df.index)
-        
-        print(mom_df.head)
         fig.add_trace(go.Bar(
-            x=df["datetime"],
-            y=mom_df["hl"],
-            marker_color=mom_df["hlc"],
-            name="Hist",
-            showlegend=False
+            x=df["datetime"], y=mom_df["hl"],
+            marker_color=mom_df["hlc"], name="Hist", showlegend=False
         ), row=3, col=1)
-
         fig.add_trace(go.Scatter(
             x=df["datetime"], y=mom_df["amom"],
-            mode="lines", line=dict(color="red", width=1),
-            name="AMOM"
+            mode="lines", line=dict(color="red",width=1), name="AMOM"
         ), row=3, col=1)
-
         fig.add_trace(go.Scatter(
             x=df["datetime"], y=mom_df["amoms"],
-            mode="lines", line=dict(color="green", width=1),
-            name="Signal"
+            mode="lines", line=dict(color="green",width=1), name="Signal"
         ), row=3, col=1)
-
-        fig.add_hline(y=0, line=dict(color="gray", dash="dash"), row=3, col=1)
+        fig.add_hline(y=0, line=dict(color="gray",dash="dash"), row=3, col=1)
 
         # ========== 布局 ==========
         fig.update_layout(
@@ -254,13 +250,24 @@ def update_graph(n):
         return fig, "数据读取正常，自动刷新"
     except Exception as e:
         return go.Figure(), f"渲染错误: {e}"
+    
+def execute_close_position():
+    global trade_client
+    try:
+        if trade_client is None:
+            trade_client = trade_coin(symbol, 'yyyyy2_okx', 1500)
+        res = trade_client.close_all_positions()
+        return {"success": True, **res}
+    except Exception as e:
+        return {"success": False, "errmsg": str(e)}
 
 @app.callback(
-    Output("close-status","children"),
-    Output("btn-close","disabled"),
-    Input("confirm-close","submit_n_clicks"),
-    State("btn-close","disabled")
+    Output("close-status", "children"),
+    Output("btn-close", "disabled"),
+    Input("confirm-close", "submit_n_clicks"),
+    State("btn-close", "disabled"),
 )
+
 def on_close(n, disabled):
     if not n or disabled:
         return "", False

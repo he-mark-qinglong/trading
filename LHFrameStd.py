@@ -10,9 +10,10 @@ import vwap_calc
 class WindowConfig:
     def __init__(self):
         #34:21:9
-        self.window_tau_s = int(340*1.618)
-        self.window_tau_h = int(210*1.618) #int(self.window_tau_s / 3)
-        self.window_tau_l = int(90*1.618) #int(self.window_tau_h/3)
+        self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
+        self.window_tau_s = int(180*self.febonaqis[1])
+        self.window_tau_h = int(120*self.febonaqis[1]) #int(self.window_tau_s / 3)
+        self.window_tau_l = int(60*self.febonaqis[1]) #int(self.window_tau_h/3)
 
 class MultiTFvp_poc:
     def __init__(self,

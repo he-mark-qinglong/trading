@@ -78,7 +78,7 @@ class trade_coin(object):
         self.long_order_record_time = None
 
         DB_PATH = f'{symbol}.db'
-        self.client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_9x")
+        self.client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
 
 
         self.multiFrameVwap = MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 
@@ -131,7 +131,7 @@ class trade_coin(object):
             else:
                 max_draw=1
 
-            if max_draw < 1 - 0.1:
+            if max_draw < 1 - 0.06:
                 self.asset_normal=0
                 print('----当日资金回撤百分比超过%s'%(1-max_draw)*30,'当日停止开仓'*100)
             else:
@@ -278,7 +278,7 @@ class trade_coin(object):
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
                     
-                    stop_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 4)  #4s * 15 = 60s,  1 min
+                    stop_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 2)  
                     
                     ChineseTradeTime = False
                     center_tp_poc = self.multiFrameVwap.SFrame_vp_poc.iloc[-1]  #(self.multiFrameVwap.SFrame_vwap_up_getin.iloc[-1] - self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1])/2 + self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1]
@@ -469,9 +469,12 @@ class trade_coin(object):
             df = df.drop_duplicates("ts").sort_values("ts")
             df["datetime"] = pd.to_datetime(df["ts"], unit="s")
             df = df.set_index("ts", drop=True)
-
+           
             # 6) 保证数据是连续、升序的
             df = df.sort_index()
+            # print(df.tail)
+            # print(df.head)
+            
         except Exception as e:
             print(f"读取数据库错误：{e}", '&&&'*10)
             return None
@@ -772,7 +775,7 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(2)
+                time.sleep(30)
             for t in threads:
                 t.join()
         except:

@@ -368,17 +368,31 @@ class RuleConfig:
                         #单根暴跌 6 x atr
                         BarSpikeCondition(
                             df_attr="df",
-                            open_thresh="SFrame_vp_poc", open_cmp="below",
+                            open_thresh="SFrame_vp_down_poc", open_cmp="below",
                             close_thresh="HFrame_vwap_down_getin", close_cmp="below",
                             atr_attr="atr", mult=6.0
                         ),
                         long_seq,
-                        ConsecutiveCondition("HFrame_vwap_up_sl", "above", 1)
+                        ConsecutiveCondition("SFrame_vwap_up_sl", "above", 1),
+                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 5)
                     ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_down_getin"
+            limit_price_attr="SFrame_vwap_down_poc"
         ),
+
+        EntryTier(
+            name="or_consec_or_spike",
+            amount=1,
+            conds=[
+                AndCondition([
+                    VolumeSpikeCondition("df", "vol", window=40, mult=1.0),
+                    ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
+                ])
+            ],
+            limit_price_attr="SFrame_vwap_up_sl2"
+        ),
+
     ])
 
     short_rule = EntryRule([
@@ -392,18 +406,30 @@ class RuleConfig:
                         #单根暴涨6 x atr
                         BarSpikeCondition(
                             df_attr="df",
-                            open_thresh="SFrame_vp_poc", open_cmp="below",
+                            open_thresh="SFrame_vp_up_poc", open_cmp="below",
                             close_thresh="HFrame_vwap_down_getin", close_cmp="below",
                             atr_attr="atr", mult=6.0
                         ),
                         short_seq, 
-                        ConsecutiveCondition("HFrame_vwap_up_sl", "above", 1)
+                        ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
+                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 5 * 3),
                     ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_up_getin"
+            limit_price_attr="SFrame_vwap_up_poc"
         ),
-        # … 你可以继续添加其他 tiers …
+
+        # EntryTier(
+        #     name="or_consec_or_spike",
+        #     amount=1,
+        #     conds=[
+        #         AndCondition([
+        #             VolumeSpikeCondition("df", "vol", window=40, mult=1.0),
+        #             ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 1),
+        #         ])
+        #     ],
+        #     limit_price_attr="SFrame_vwap_down_sl2"
+        # ),
     ])
 
 

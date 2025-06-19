@@ -1707,3 +1707,10 @@
 
 2025-06-17 01:59:41,090 - INFO - Dash is running on http://127.0.0.1:8050/
 
+2025-06-17 09:58:16,958 - INFO - Dash is running on http://127.0.0.1:8050/
+
+2025-06-19 11:54:10,426 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2622.7503544999086, 'price0', 2622.7503544999086, 1154, 'buyshort')
+2025-06-19 11:55:09,495 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2622.7503544999086, 'price0', 2622.7503544999086, 1155, 'buyshort')
+2025-06-19 11:56:10,814 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2622.7503544999086, 'price0', 2622.7503544999086, 1156, 'buyshort')
+2025-06-19 11:58:40,081 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2622.7503544999086, 'price0', 2622.7503544999086, 1158, 'buyshort')
+2025-06-19 12:05:08,691 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2492.4738241194214, 'price0', 2492.4738241194214, 1204, 'buyshort')

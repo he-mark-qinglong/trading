@@ -36,12 +36,12 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 444)
-LIMIT_K_N = 3000 + LIMIT_K_N_APPEND  #+ 3000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 700
 
 
 def read_and_sort_df(is_append=True):
     df = client.read_df(limit=LIMIT_K_N_APPEND if is_append else LIMIT_K_N, order_by="ts DESC")
-    print('df.head:', df.head)
+    #print('df.head:', df.head)
     # 2. 检查必须列
     required = {"ts","open","high","low","close","vol"}
     if not required.issubset(df.columns):
@@ -132,8 +132,8 @@ def update_graph(n):
         for name, color in {
             **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
-            # **{k:'magenta'    for k in ["HFrame_vwap_up_poc"]},
-            # **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            **{k:'magenta'    for k in ["HFrame_vp_poc"]},
+            **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             **{k:'deeppink'   for k in ["HFrame_vwap_up_getin","HFrame_vwap_down_getin"]},
             
             **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},

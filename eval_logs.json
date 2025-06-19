@@ -1,1 +1,1 @@
-{"time": 1750055435.945494, "side": "short", "open2equity": 0.0038111664733130528, "tiers": [{"name": "or_consec_or_spike_short", "skipped": false, "conds": [{"cond_type": "AndCondition", "passed": false, "price": null}], "ok": false, "selected_price": null}]}
+{"time": 1750306794.561066, "side": "short", "open2equity": 0.0, "tiers": [{"name": "or_consec_or_spike_short", "skipped": false, "conds": [{"cond_type": "AndCondition", "passed": false, "price": null}], "ok": false, "selected_price": null}]}
