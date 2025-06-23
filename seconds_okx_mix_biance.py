@@ -20,7 +20,7 @@ MAX_ROWS        = 100_000
 
 okx_30x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_30x")
 binance_30x_cli  = SQLiteWALClient(DB_PATH, table="binance_30x")
-# cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
+cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
 cmb_30x_cli      = SQLiteWALClient(DB_PATH, table="combined_30x")
 # drop_orderbook_snap(DB_PATH, "combined_30x")
 async def collect_okx(queue: asyncio.Queue):
@@ -52,7 +52,7 @@ async def collect_okx(queue: asyncio.Queue):
                         o,h,l,c = df.iloc[0].price, df.price.max(), df.price.min(), df.iloc[-1].price
                         v    = round(df.vol.sum(),2)
                         row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
-
+                        
                         # 写 OKX 表
                         okx_30x_cli.append_df_ignore(pd.DataFrame([row]))
                         # print('okx 30x ', pd.DataFrame([row]))

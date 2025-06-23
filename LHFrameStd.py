@@ -11,9 +11,11 @@ class WindowConfig:
     def __init__(self):
         #34:21:9
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
-        self.window_tau_s = int(180*self.febonaqis[1])
-        self.window_tau_h = int(120*self.febonaqis[1]) #int(self.window_tau_s / 3)
-        self.window_tau_l = int(60*self.febonaqis[1]) #int(self.window_tau_h/3)
+        #参数解释，按照日线的趋势均线规则，参数取, 5,14,30. 但是30作为短线回归几乎不太有效（后续资金量如果比较大可以考虑)，所以30周期的先不用。
+        #全部基于1h的级别基础之上来乘以这个系数.
+        self.window_tau_s = int(336*self.febonaqis[0])  #1d = 1h x 24, 14x24 == 336
+        self.window_tau_h = int(120*self.febonaqis[0])     #8h = 1h x 12, 5x24 == 120
+        self.window_tau_l = int(24*self.febonaqis[0])   #1h = 2.5m x 24
 
 class MultiTFvp_poc:
     def __init__(self,
@@ -27,7 +29,9 @@ class MultiTFvp_poc:
         self.window_HFrame       = window_HFrame
         self.window_SFrame       = window_SFrame
         self.std_window_LFrame   = std_window_LFrame
-        self.rma_smooth_window   = 45
+        self.rma_smooth_window   = std_window_LFrame
+        self.rma_smooth_window_s   = std_window_LFrame * 2
+        
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         
 
@@ -105,6 +109,30 @@ class MultiTFvp_poc:
             'hhigh': pd.Series(hhigh_arr,     index=idx),
         }
 
+    def calc_atr(self, period=14, high_col="high", low_col="low", close_col="close"):
+        """
+        计算ATR并返回Series，可自动识别DataFrame列名
+        Params:
+            df      -- 带有high/low/close列的DataFrame
+            period  -- ATR窗口期（默认14）
+            high_col, low_col, close_col -- 列名，如自定义表头可改
+        Returns:
+            Series: ATR序列。如需直接加列可用 df['ATR'] = ...
+        """
+        df = self.df
+        high = df[high_col]
+        low  = df[low_col]
+        close = df[close_col]
+        prev_close = close.shift(1)
+
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs()
+        ], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+        return atr
+
     def append_df(self, new_df: pd.DataFrame, debug=False):
         """
         增量更新：new_df 已保证索引是 DatetimeIndex，
@@ -165,7 +193,7 @@ class MultiTFvp_poc:
 
         # 2) RMA 平滑
         self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc,
-                                    length=self.rma_smooth_window)
+                                    length=self.rma_smooth_window_s)
 
         # 3) swing 用于 std
         def swing(vp_poc):
@@ -191,19 +219,20 @@ class MultiTFvp_poc:
 
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
         rma = lambda s: ta.rma(s, length=self.rma_smooth_window)
+        rma_s = lambda s: ta.rma(s, length=self.rma_smooth_window_s)
         slow, shigh = self.slow_poc, self.shigh_poc
         hlow, hhigh = self.hlow_poc, self.hhigh_poc
 
         # SFrame
-        self.SFrame_vwap_up_poc    = rma(shigh)
-        self.SFrame_vwap_up_getin  = rma(shigh + self.SFrame_price_std * self.febonaqis[1])
-        self.SFrame_vwap_up_sl     = rma(shigh + self.SFrame_price_std * self.febonaqis[2])
-        self.SFrame_vwap_up_sl2    = rma(shigh + self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_up_poc    = rma_s(shigh)
+        self.SFrame_vwap_up_getin  = rma_s(shigh + self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_up_sl     = rma_s(shigh + self.SFrame_price_std * self.febonaqis[4])
+        self.SFrame_vwap_up_sl2    = rma_s(shigh + self.SFrame_price_std * self.febonaqis[5])
 
-        self.SFrame_vwap_down_poc    = rma(slow)
-        self.SFrame_vwap_down_getin  = rma(slow - self.SFrame_price_std * self.febonaqis[1])
-        self.SFrame_vwap_down_sl     = rma(slow - self.SFrame_price_std * self.febonaqis[2])
-        self.SFrame_vwap_down_sl2    = rma(slow - self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_down_poc    = rma_s(slow)
+        self.SFrame_vwap_down_getin  = rma_s(slow - self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_down_sl     = rma_s(slow - self.SFrame_price_std * self.febonaqis[4])
+        self.SFrame_vwap_down_sl2    = rma_s(slow - self.SFrame_price_std * self.febonaqis[5])
 
         # HFrame（取更保守的 max/min）
         self.HFrame_vwap_up_poc    = rma(hhigh) #np.maximum(self.SFrame_vwap_up_getin, rma(hhigh))
@@ -237,12 +266,14 @@ class MultiTFvp_poc:
         self.vol_df = self.compute_volume_channels(self.df)
         self.momentum_df = self.anchored_momentum()
 
+        self.atr = self.calc_atr()
+
         
 
     # 1) volume核心指标计算
     def compute_volume_channels(self, df: pd.DataFrame, 
                                 volume_map_period: int = 240, 
-                                volume_scale: float = 0.9
+                                volume_scale: float = 1
                                 ) -> pd.DataFrame:
         """
         在原 df 上计算：
@@ -476,28 +507,6 @@ def plot_all_multiftfpoc_vars(multFramevp_poc,
     else:
         return fig
 
-def calc_atr(df, period=14, high_col="high", low_col="low", close_col="close"):
-    """
-    计算ATR并返回Series，可自动识别DataFrame列名
-    Params:
-        df      -- 带有high/low/close列的DataFrame
-        period  -- ATR窗口期（默认14）
-        high_col, low_col, close_col -- 列名，如自定义表头可改
-    Returns:
-        Series: ATR序列。如需直接加列可用 df['ATR'] = ...
-    """
-    high = df[high_col]
-    low  = df[low_col]
-    close = df[close_col]
-    prev_close = close.shift(1)
-
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
-    atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    return atr
 
 def rsi_with_ema_smoothing(coin_date_df, length=13):  
     close = coin_date_df.iloc[:, 4]  

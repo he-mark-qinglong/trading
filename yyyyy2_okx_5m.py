@@ -40,7 +40,7 @@ ABSPATH=os.path.abspath(sys.argv[0])
 ABSPATH=os.path.dirname(ABSPATH)+"/"
 flag='0'
 
-from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, calc_atr, WindowConfig
+from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, WindowConfig
 
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
@@ -72,22 +72,6 @@ class trade_coin(object):
         self.asset_normal = 1
         self.usdt_total = None
 
-        self.COLUMNS = ["trade_time", "side", "price", "size", "value", "record_time"]
-
-        self.short_order_record_time = None
-        self.long_order_record_time = None
-
-        DB_PATH = f'{symbol}.db'
-        self.client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
-
-
-        self.multiFrameVwap = MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 
-                                            window_HFrame=windowConfig.window_tau_h, 
-                                            window_SFrame=windowConfig.window_tau_s)
-        # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
-        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 20 * 3)
-        self.strategy_log_interval = 0
-
         if 'ETH' in self.symbol:
             self.asset_coe=20
         else:
@@ -110,16 +94,41 @@ class trade_coin(object):
         self.upl_open_condition()
 
         '''数据初始化'''
-        
+        DB_PATH = f'{symbol}.db'
+        self.client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
         self.coin_data = self.get_kline(init=True)
-        self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
 
+        self.multiFrameVwap = MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 
+                                        window_HFrame=windowConfig.window_tau_h, 
+                                        window_SFrame=windowConfig.window_tau_s)
+        # self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
+       
+        # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
+        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 150 * 20)  #最多挂单50m。
+        self.strategy_log_interval = 0
 
         self.max_history_long_profit = 0
         self.max_history_short_profit = 0
+
+        self.direction = self.mv_direction()
+        self.direction_time = time.time()
+
+        print("direction is: ", self.direction)
+
+    def get_open_interest(self):
+        oi_result = self.publicAPI.get_open_interest('SWAP', instId=self.symbol)
+        print('******', oi_result)
+        funding_rate = self.publicAPI.get_funding_rate(instId=self.symbol)
+        fundingRate = float(funding_rate['data'][0]['fundingRate'])
+        print("######", f"fundingRate={fundingRate}  {'空头居多' if fundingRate <= 0 else '多头居多'}")
+
     def trade1(self):
         try:
             print('运行中',self.symbol)
+            if time.time() - self.direction_time >= 3600:
+                self.direction = self.mv_direction()
+
+            self.get_open_interest()
             self.usdt_total=self.get_usdt_total()
             if time.time()-self.asset_time>60:
                 self.asset_time=time.time()
@@ -164,8 +173,8 @@ class trade_coin(object):
                 print('--2'*10,upl_long_dict,upl_short_dict,sum(upl_long_dict.values()),sum(upl_short_dict.values()))
             
                 if 1:
+                    # 1) 检查超时撤单
                     for side in ("long", "short"):
-                        # 1) 检查超时撤单
                         if self.strategy.should_cancel(side):
                             self.cancel_order(side)  
                             self.strategy.clear_order(side)
@@ -177,7 +186,7 @@ class trade_coin(object):
                     sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
                     
                     if self.strategy_log_interval % 20 == 0:
-                        print('(((())))'*10, self.strategy.eval_history[-1])
+                        print(self.strategy.eval_history[-1])
                         with builtins.open("eval_logs.json","w") as f:
                             import json
                             json.dump(self.strategy.eval_history[-1], f, default=str)
@@ -188,13 +197,11 @@ class trade_coin(object):
                     time.sleep(60)
                     sig_long = None
                     sig_short = None
-
-                
                     
                 cur_SFrame_vwap_up_poc = self.multiFrameVwap.SFrame_vwap_up_poc.iloc[-1]
                 cur_SFrame_vwap_down_poc = self.multiFrameVwap.SFrame_vwap_down_poc.iloc[-1]
-                cur_HFrame_vwap_down_sl = self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-1]
-                cur_HFrame_vwap_up_sl = self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-1]
+                cur_SFrame_vwap_down_sl = self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-1]
+                cur_SFrame_vwap_up_sl = self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-1]
 
                 if sig_long != None or sig_short != None:
                     print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, sig_long=={sig_long\
@@ -203,14 +210,38 @@ class trade_coin(object):
                 else:
                     if time.time() - self.asset_time > 120:
                         self.cancel_order()
+
+                atr_1x =  self.multiFrameVwap.atr.iloc[-1]
+
+                symbol=self.symbol
+                try:
+                    upl_short=upl_dict[symbol+'-SHORT']
+                    amount_short=positionAmount_dict_sub[symbol+'-SHORT']
+                    notionalUsd_short=notionalUsd_dict[symbol+'-SHORT']
+                    price_short= markprice_dict[symbol+'-SHORT']
+                except:
+                    upl_short=0
+                    amount_short=0
+                    notionalUsd_short=0
+                
+                try:
+                    upl_long=upl_dict[symbol+'-LONG']
+                    amount_long=positionAmount_dict_sub[symbol+'-LONG']
+                    notionalUsd_long=notionalUsd_dict[symbol+'-LONG']
+                    price_long= markprice_dict[symbol+'-LONG']
+                except:
+                    upl_long=0
+                    amount_long=0
+                    notionalUsd_long=0
+                    
                 if self.asset_normal==1 and self.upl_short_open==1 and sig_short != None and sig_short.action:
                     #开空
                     try:  
-                        if 1 :
+                        if not amount_long == 0 and 1 :
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
-                            price0=sig_short.price #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
-                            price = price0*(1-0.0001) 
+                            price0=max(sig_short.price + atr_1x, self.coin_data['high'].tail(100).max()) #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price = price0
                             fv=self.fv[self.symbol]
                             amount=sig_short.amount  #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_short))
                             
@@ -231,11 +262,11 @@ class trade_coin(object):
                 if self.asset_normal==1 and self.upl_long_open==1 and sig_long != None and sig_long.action:
                     #开多
                     try:  
-                        if 1 and cur_close < 2651:
+                        if 1 and not amount_short == 0:
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
-                            price0=sig_long.price #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
-                            price=price0*(1+0.0001)
+                            price0=min(sig_long.price - atr_1x, self.coin_data['low'].tail(100).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price=price0
                             fv=self.fv[self.symbol]
                             amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
                             symbol=self.symbol
@@ -253,35 +284,13 @@ class trade_coin(object):
                     self.upl_open_condition()
                 #平仓
                 if 1:
-                    
-                    symbol=self.symbol
-                    try:
-                        upl_short=upl_dict[symbol+'-SHORT']
-                        amount_short=positionAmount_dict_sub[symbol+'-SHORT']
-                        notionalUsd_short=notionalUsd_dict[symbol+'-SHORT']
-                        price_short= markprice_dict[symbol+'-SHORT']
-                    except:
-                        upl_short=0
-                        amount_short=0
-                        notionalUsd_short=0
-                    
-                    try:
-                        upl_long=upl_dict[symbol+'-LONG']
-                        amount_long=positionAmount_dict_sub[symbol+'-LONG']
-                        notionalUsd_long=notionalUsd_dict[symbol+'-LONG']
-                        price_long= markprice_dict[symbol+'-LONG']
-                    except:
-                        upl_long=0
-                        amount_long=0
-                        notionalUsd_long=0
-                    
                     # lever_dic = self.accountAPI.get_leverage(self.symbol, 'cross')
                     fee_require_profit = 0.0004 + 0.0001
                     # if len(lever_dic) > 0:
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
                     
-                    exit_required_profit=max(fee_require_profit, calc_atr(self.coin_data).iloc[-1]/cur_close * 2)  
+                    exit_required_profit=max(fee_require_profit,atr_1x/cur_close * 2)  
                     
                     ChineseTradeTime = False
                     center_tp_poc = self.multiFrameVwap.SFrame_vp_poc.iloc[-1]  #(self.multiFrameVwap.SFrame_vwap_up_getin.iloc[-1] - self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1])/2 + self.multiFrameVwap.SFrame_vwap_down_getin.iloc[-1]
@@ -293,7 +302,7 @@ class trade_coin(object):
                         def close_short(close_amount, price0, instantly = False):
                             if close_amount > 0:
                                 model='sellshort'
-                                price=price0*(1-(-0.0001 if instantly else 0.0001))
+                                price=price0 + atr_1x if instantly else price0*(1- 0.0001)
                                 amount=max(close_amount, 1)
                                 symbol=self.symbol
                                 place_order=self.create_order1(symbol,price,amount,model)
@@ -304,7 +313,8 @@ class trade_coin(object):
                         short_profit = upl_short / notionalUsd_short
                         if short_profit <= self.max_history_short_profit / 2 and self.max_history_short_profit > 0.004:
                             close_short(amount_short, cur_close, instantly=True)
-                            self.max_history_short_profit = 0
+                            if self.no_holdin_orders("short"):
+                                self.max_history_short_profit = 0
                         else:
                             self.max_history_short_profit = max(self.max_history_short_profit, short_profit)
 
@@ -313,12 +323,12 @@ class trade_coin(object):
                             # 2) 中心线止盈
                             consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4
                             cross_center_and_tp = consecutive_cross_center \
-                                                and short_profit > exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['lower_scaled'].iloc[-1]
+                                                and short_profit > exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['sma_scaled'].iloc[-1]
                             # 3) 下轨止盈
                             cross_down_and_tp = (cur_close <= cur_SFrame_vwap_down_poc) \
                                                 and (short_profit > fee_require_profit)
                             # 4) 常规止损：跌破  cur_HFrame_vwap_down_sl（不论盈亏都平）
-                            below_sl = (cur_close <=  cur_HFrame_vwap_down_sl)
+                            below_sl = (cur_close <=  cur_SFrame_vwap_down_sl)
 
                             # ---- 执行顺序：①连续突破 ②中心止盈 ③下轨止盈 ④常规止损
                             close_amount = 0
@@ -333,7 +343,7 @@ class trade_coin(object):
                                 close_amount = min(2, amount_short)
                                 price0       = cur_SFrame_vwap_down_poc
                             elif cross_center_and_tp:
-                                close_amount = amount_long
+                                close_amount = 1 #amount_long
                                 price0 = cur_low
 
                             close_short(close_amount, price0)
@@ -341,7 +351,7 @@ class trade_coin(object):
                         def close_long(close_amount, price0, instantly = False):
                             if close_amount > 0:
                                 model='selllong'
-                                price=price0*(1.00 + (-0.0001 if instantly else 0.0001))
+                                price=price0 - atr_1x if instantly else price0*(1 + 0.0001)
                                 amount=max(close_amount, 1)
                                 symbol=self.symbol
                                 place_order=self.create_order1(symbol,price,amount,model)
@@ -351,22 +361,23 @@ class trade_coin(object):
 
                         long_profit = upl_long / notionalUsd_long
 
-                        if long_profit <= self.max_history_long_profit / 2 and self.max_history_long_profit > 0.004:
+                        if False and long_profit <= self.max_history_long_profit / 2 and self.max_history_long_profit > 0.004:
                             close_long(amount_long, cur_close, instantly = True)
-                            self.max_history_long_profit = 0
+                            if self.no_holdin_orders("short"):
+                                self.max_history_long_profit = 0
                         else:
                             self.max_history_long_profit = max(self.max_history_long_profit, long_profit)
 
-                            # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
+                            # 1) 最近 3 根 K 线里 ≥2 根 cur_SFrame_vwap_up_sl 被突破 → 直接全平
                             consecutive_upponsl = (self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
                             # 2) 中心线止盈：收盘在中心线上方，且利润达 exit_required_profit
                             consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4
                             cross_center_and_tp = consecutive_cross_center and (long_profit > exit_required_profit)
                             # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
                             cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
-                                            and (long_profit > fee_require_profit) and  exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['lower_scaled'].iloc[-1]
+                                            and (long_profit > fee_require_profit) and  exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['sma_scaled'].iloc[-1]
                             # 4) 常规止损（突破 HFrame 上轨），不论盈亏都平
-                            upon_sl = (cur_close >= cur_SFrame_vwap_up_poc)
+                            upon_sl = cur_close >= cur_SFrame_vwap_up_sl
 
                             # 默认不平仓
                             close_amount = 0
@@ -385,7 +396,7 @@ class trade_coin(object):
                                 price0       = cur_SFrame_vwap_up_poc
                             elif cross_center_and_tp:
                                 # ② 中心止盈 → 平 1
-                                close_amount = amount_long
+                                close_amount = 1 #amount_long
                                 price0 = cur_high
                         
                             close_long(close_amount, price0)
@@ -444,33 +455,119 @@ class trade_coin(object):
             self.upl_short_open=0
         else:
             self.upl_short_open=1  
+    def no_holdin_orders(self, direction:str):
+        notionalUsd_dict, markprice_dict, positionAmount_dict, upl_dict, upl_long_dict, upl_short_dict = \
+            self.get_entryprice_okx()
+        if direction == "short":
+            return positionAmount_dict.get(f"{self.symbol}-SHORT", 0) > 0
+        else:
+            return positionAmount_dict.get(f"{self.symbol}-LONG", 0) > 0
 
-    # def get_kline(self):
-    #     a11 = 1
-    #     while(1):
-    #         try:
-    #             f_kline_3m =  self.marketAPI.get_candlesticks(self.symbol,'','','5m', limit=500) #最新100个K
-    #             klen = len(f_kline_3m.index)
-    #             assert klen>2
-    #             break
-    #         except:
-    #             a11+=1
-    #             time.sleep(0.5)
-    #             print('\t 获取f_kline_3m数据超时')
-    #             print('\t a11=%s'%a11)
-    #             if a11<20:
-    #                 continue
-    #             else:
-    #                 break
-    #     time.sleep(0.2) #4
-    #     f_kline_3m = f_kline_3m['data']
-    #     coin_data = pd.DataFrame(np.zeros([len(f_kline_3m),len(f_kline_3m[0])])) #时间 开盘价 最高价 最低价 收盘价 交易量 交易量转化BTC数量
-    #     print ("\t 实时K线数据更新 开始 %s" %time.ctime())
-    #     coin_data= pd.DataFrame([[time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(float(f_kline_3m[i][0])/1000)),float(f_kline_3m[i][1]),float(f_kline_3m[i][2]),float(f_kline_3m[i][3]),float(f_kline_3m[i][4]),float(f_kline_3m[i][5])] for i in range(len(f_kline_3m))    ])    
-    #     print ("\t 实时K线数据更新 结束 %s " %time.ctime(), f'len of coin_data={len(coin_data)}\n')
-    #     coin_data = coin_data.sort_index(axis = 0,ascending = False)
-    #     coin_data.index = range(len(coin_data))
-    #     return coin_data          
+    def mv_direction(self):
+        kline = self.get_1h_kline()
+        ma_5 = kline['close'].ewm(span=5, adjust=False).mean()
+        ma_14 = kline['close'].ewm(span=14, adjust=False).mean()
+        ma_30 = kline['close'].ewm(span=30, adjust=False).mean()
+
+        def ma_signal(ma_5, ma_14, ma_30,
+              th_extreme=0.0):
+            """
+            参数
+            ----
+            ma_5, ma_14, ma_30 : float
+                三条均线的当前值
+            th_extreme : float
+                用来区分“极端”与“普通”的阈值，
+                默认为 0.0（即只看正负，不分幅度）。
+                如果你想“极端看多”要求 d1, d2 均 > 某个正数，
+                就把它设大一些，比如设为 0.01*ma_14。
+
+            返回
+            ----
+            sig : int
+                2   极端看多  
+                1   看多  
+                0   中性/多空交错  
+            -1   看空  
+            -2   极端看空
+            """
+            d1 = ma_5  - ma_14
+            d2 = ma_14 - ma_30
+
+            # 两者同向且幅度都超过阈值 → 极端
+            if d1 > th_extreme and d2 > th_extreme:
+                return 2
+            if d1 < -th_extreme and d2 < -th_extreme:
+                return -2
+
+            # 两者同向（>0 或 <0）→ 普通多/空
+            if d1 > 0 and d2 > 0:
+                return 1
+            if d1 < 0 and d2 < 0:
+                return -1
+
+            # 其余情况（多空不一致或有一条差值为 0）当中性
+            return 0
+
+
+        return ma_signal(
+            ma_5.iloc[-1],
+            ma_14.iloc[-1],
+            ma_30.iloc[-1],
+            th_extreme=0.0
+        )
+        
+    def get_1h_kline(self):
+        a11 = 1
+        while(1):
+            try:
+                f_kline =  self.marketAPI.get_candlesticks(self.symbol,'','','1D', limit=600) #最新100个K
+                klen = len(f_kline['data'])
+                assert klen>2
+                break
+            except Exception as e:
+                a11+=1
+                time.sleep(0.5)
+                print('\t 获取f_kline数据超时', e)
+                print('\t a11=%s'%a11)
+                if a11<20:
+                    continue
+                else:
+                    break
+        """
+        如果返回的是 6 列（一般是现货 Spot）
+        [
+        0: "ts" // 毫秒时间戳
+        1: "open" // 开盘价
+        2: "high" // 最高价
+        3: "low" // 最低价
+        4: "close" // 收盘价
+        5: "volume" // 成交量（基准币种）
+        ]
+
+        如果返回的是 9 列（合约、永续等）
+        [
+        0: "ts" // 毫秒时间戳
+        1: "open" // 开盘价
+        2: "high" // 最高价
+        3: "low" // 最低价
+        4: "close" // 收盘价
+        5: "vol" // 成交量（合约张数或基准币种量）
+        6: "volCcy" // 成交量（计价币种量）
+        7: "turnover" // 成交额（基准币*价格≈计价币）
+        8: "tradeCount" // 成交笔数
+        ]
+
+        """
+        df = pd.DataFrame(f_kline['data'], columns=['timestamp','open','high','low','close','volume', 'volCcy', 'turnover', 'tradeCount'])
+
+        # 3. 类型转换 & 索引
+        df['timestamp'] = pd.to_datetime(df['timestamp'].astype(float), unit='ms')
+        for col in ['open','high','low','close','volume']:
+            df[col] = df[col].astype(float)
+        df.set_index('timestamp', inplace=True)
+        df = df.sort_index()
+        return df
     
     def get_kline(self, init=False):
         """

@@ -82,6 +82,7 @@ class VolumeSpikeCondition:
 @dataclass
 class BarSpikeCondition:
     df_attr:      str   # e.g. "df"
+    direction:    str   # e.g. "up"/"down"
     open_thresh:  str   # e.g. "SFrame_vp_poc"
     open_cmp:     str   # "above"/"below"
     close_thresh: str   # e.g. "HFrame_vwap_down_getin"
@@ -98,7 +99,8 @@ class BarSpikeCondition:
         ct = getattr(data_src, self.close_thresh).iloc[-1]
         o_ok = (last["open"] < ot) if self.open_cmp == "below" else (last["open"] > ot)
         c_ok = (last["close"] < ct) if self.close_cmp == "below" else (last["close"] > ct)
-        if not (o_ok and c_ok):
+        direction_ok = (last["close"] < last["open"]) if self.direction == "down" else (last["close"] < last["open"])
+        if not (o_ok and c_ok and direction_ok):
             return False
         hi, lo = last["high"], last["low"]
         atr = getattr(data_src, self.atr_attr).iloc[-1]
@@ -161,7 +163,7 @@ class MultiFramePOCStrategy:
                  cur_close: float,
                  close_series: pd.Series,
                  data_src,
-                 open2equity_pct: int
+                 open2equity_pct: float
                 ) -> Optional[OrderSignal]:
 
         now = time.time()
@@ -173,7 +175,7 @@ class MultiFramePOCStrategy:
         }
 
         # 1. 先判断整体能否继续
-        if self._has_order[side] or open2equity_pct >= 0.2:
+        if self._has_order[side] or open2equity_pct >= 3:
             record["skipped"] = True
             self.eval_history.append(record)
             return None
@@ -332,7 +334,7 @@ mid_u2d_touch   = PriceTouchCondition("SFrame_vp_poc",      comparator="below", 
 down_sl_touch  = PriceTouchCondition("HFrame_vwap_down_sl", comparator="below", window=200)
 down_poc_touch = PriceTouchCondition("HFrame_vwap_down_poc", comparator="bellow", window=200)
 
-short_seq = SequenceWithForbidden(
+short_touch_up_then_below_center__notouch_down = SequenceWithForbidden(
     steps=[
         SeqStep(positive=up_poc_touch, forbidden_next=[]),       # 步骤1: 先触及POC
 
@@ -343,7 +345,7 @@ short_seq = SequenceWithForbidden(
     window=300
 )
 
-long_seq = SequenceWithForbidden(
+long_touch_down_then_uppon_center__notouch_up = SequenceWithForbidden(
     steps=[
         SeqStep(positive=down_poc_touch, forbidden_next=[]),       # 步骤1: 先触及POC
 
@@ -363,34 +365,36 @@ class RuleConfig:
             amount=1,
             conds=[
                 AndCondition([
-                    VolumeSpikeCondition("df", "vol", window=40, mult=2.0),
+                    VolumeSpikeCondition("df", "vol", window=80, mult=2.0),
                     OrCondition([
-                        #单根暴跌 6 x atr
+                        #单根从SFrame_vwap_down_poc之下，暴跌 3 x atr
                         BarSpikeCondition(
                             df_attr="df",
+                            direction="down",
                             open_thresh="SFrame_vwap_down_poc", open_cmp="below",
-                            close_thresh="HFrame_vwap_down_getin", close_cmp="below",
-                            atr_attr="atr", mult=6.0
+                            close_thresh="SFrame_vwap_down_getin", close_cmp="below",
+                            atr_attr="atr", mult=3.0
                         ),
-                        long_seq,
-                        ConsecutiveCondition("SFrame_vwap_up_sl", "above", 1),
-                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 5)
+                        
+                        short_touch_up_then_below_center__notouch_down,
+                        ConsecutiveCondition("SFrame_vwap_down_sl", "below", 4),
+                        ConsecutiveCondition("SFrame_vwap_down_poc", "below", 10)
                     ])
                 ])
             ],
-            limit_price_attr="SFrame_vwap_down_poc"
+            limit_price_attr="SFrame_vwap_down_sl2"
         ),
 
         EntryTier(
-            name="or_consec_or_spike",
+            name="below_down_sl2_and_volspike",
             amount=1,
             conds=[
                 AndCondition([
-                    VolumeSpikeCondition("df", "vol", window=40, mult=1.0),
-                    ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
+                    VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                    ConsecutiveCondition("SFrame_vwap_down_sl2", "below", 2),
                 ])
             ],
-            limit_price_attr="SFrame_vwap_up_sl2"
+            limit_price_attr="SFrame_vwap_down_sl2"
         ),
 
     ])
@@ -401,35 +405,36 @@ class RuleConfig:
             amount=1,
             conds=[
                 AndCondition([
-                    VolumeSpikeCondition("df", "vol", window=40, mult=2.0),
+                    VolumeSpikeCondition("df", "vol", window=80, mult=2.0),
                     OrCondition([  
-                        #单根暴涨6 x atr
+                        #单根暴涨x倍 atr
                         BarSpikeCondition(
                             df_attr="df",
+                            direction="up",
                             open_thresh="SFrame_vwap_up_poc", open_cmp="below",
-                            close_thresh="HFrame_vwap_down_getin", close_cmp="below",
-                            atr_attr="atr", mult=6.0
+                            close_thresh="SFrame_vwap_down_getin", close_cmp="below",
+                            atr_attr="atr", mult=3.0
                         ),
-                        short_seq, 
-                        ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
-                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 5 * 3),
+                        long_touch_down_then_uppon_center__notouch_up, 
+                        ConsecutiveCondition("SFrame_vwap_up_sl", "above", 4),
+                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 10),
                     ])
                 ])
             ],
             limit_price_attr="SFrame_vwap_up_poc"
         ),
 
-        # EntryTier(
-        #     name="or_consec_or_spike",
-        #     amount=1,
-        #     conds=[
-        #         AndCondition([
-        #             VolumeSpikeCondition("df", "vol", window=40, mult=1.0),
-        #             ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 1),
-        #         ])
-        #     ],
-        #     limit_price_attr="SFrame_vwap_down_sl2"
-        # ),
+        EntryTier(
+            name="uppon_up_sl2_and_volspike",
+            amount=1,
+            conds=[
+                AndCondition([
+                    VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                    ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 2),
+                ])
+            ],
+            limit_price_attr="SFrame_vwap_up_sl2"
+        ),
     ])
 
 
