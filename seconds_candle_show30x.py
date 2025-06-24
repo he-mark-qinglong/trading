@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 444)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 5700
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND  #+ 5700
 
 
 def read_and_sort_df(is_append=True):
@@ -115,8 +115,8 @@ def update_graph(n):
             # **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             
             # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            # **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
-            **{k:'darkslategray'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
+            **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
+            # **{k:'darkslategray'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
             
         }.items():
             series = getattr(multiVwap, name, None)
