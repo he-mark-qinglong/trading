@@ -1913,3 +1913,6 @@
 2025-06-21 15:44:21,366 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2436.9226449735647, 'price0', 2438.669559153714, 1543, 'buyshort')
 2025-06-21 15:51:30,969 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2436.629454521804, 'price0', 2438.2968609326335, 1551, 'buyshort')
 2025-06-21 16:04:01,886 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2436.217717213716, 'price0', 2437.823512893773, 1603, 'buyshort')
+2025-06-23 23:30:25,004 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2301.360232532508, 'price0', 2317.0, 2329, 'buyshort')
+2025-06-24 00:21:24,398 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_short.price', 2302.8780209662827, 'price0', 2310.854461177994, 20, 'buyshort')
+2025-06-24 01:12:12,155 - INFO - ('yyyyy2_okx', 'ETH-USDT-SWAP', 'sig_long.price', 2181.3604795874335, 'price0', 2168.533995054136, 110, 'buylong')

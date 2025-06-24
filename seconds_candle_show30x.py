@@ -36,7 +36,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 444)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 3700
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND  + 5700
 
 
 def read_and_sort_df(is_append=True):
@@ -70,29 +70,6 @@ app.layout = html.Div([
     html.Div(id="status-msg", style={"color": "red", "marginTop": 10})
 ])
 
-# 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
-colors = {
-    'LFrame_vp_poc':     'firebrick',
-    'SFrame_vp_poc':            'purple',
-
-    'SFrame_vwap_up_poc':          'blue',
-    # 'SFrame_vwap_up_getin':    'yellow',
-    # 'SFrame_vwap_up_sl':       'white',
-    'SFrame_vwap_down_poc':        'blue',
-    # 'SFrame_vwap_down_getin':  'deepskyblue',
-    # 'SFrame_vwap_down_sl':     'seagreen',
-
-    'HFrame_vwap_up_poc':          'magenta',
-    'HFrame_vwap_up_getin':        'deeppink',
-    'HFrame_vwap_up_sl':       'orangered',
-    'HFrame_vwap_up_sl2':       'orangered',
-    'HFrame_vwap_down_poc':        'magenta',  #'teal',
-    'HFrame_vwap_down_getin':  'turquoise',
-    'HFrame_vwap_down_sl':     'darkslategray',
-    'HFrame_vwap_down_sl2':     'darkslategray',
-}
-vars_to_plot = list(colors.keys())
-
 @app.callback(
     Output("kline-graph", "figure"),
     Output("status-msg", "children"),
@@ -102,8 +79,9 @@ def update_graph(n):
     try:
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
         df = read_and_sort_df(is_append=False)
+        before = time.time()
         multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
-
+        print("calc vwap takes time:", time.time() - before)
         # 截断到第一个有效 SFrame_vp_poc
         start = multiVwap.SFrame_vp_poc.first_valid_index()
         if start is None:
@@ -130,15 +108,15 @@ def update_graph(n):
         ), row=1, col=1)
         # 所有 vp/VWAP/STD 系列
         for name, color in {
-            **{k:'firebrick' for k in ["LFrame_vp_poc"]},
+            # **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
             **{k:'magenta'    for k in ["HFrame_vp_poc"]},
-            **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
-            **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
+            # **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            # **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             
-            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'khaki'   for k in ["SFrame_vwap_up_sl","SFrame_vwap_down_sl"]},
-            **{k:'darkslategray'   for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
+            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
+            **{k:'darkslategray'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
             
         }.items():
             series = getattr(multiVwap, name, None)

@@ -104,7 +104,9 @@ class trade_coin(object):
         # self.multiFrameVwap.calculate_SFrame_vp_poc_and_std(self.coin_data, DEBUG)
        
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
-        self.strategy = MultiFramePOCStrategy(RuleConfig.long_rule, RuleConfig.short_rule, 150 * 20)  #最多挂单50m。
+        self.strategy = MultiFramePOCStrategy(long_rule=RuleConfig.long_rule, 
+                                              short_rule=RuleConfig.short_rule, 
+                                              timeout=150 * 30)  #最多挂单时间：2.5m x 30 = 75m。
         self.strategy_log_interval = 0
 
         self.max_history_long_profit = 0
@@ -122,6 +124,13 @@ class trade_coin(object):
         fundingRate = float(funding_rate['data'][0]['fundingRate'])
         print("######", f"fundingRate={fundingRate}  {'空头居多' if fundingRate <= 0 else '多头居多'}")
 
+        odb = self.marketAPI.get_orderbook(instId=self.symbol, sz=10)
+        asks = odb['data'][0]['asks']
+        bids = odb['data'][0]['bids']
+        print(asks)
+        print(bids)
+
+
     def trade1(self):
         try:
             print('运行中',self.symbol)
@@ -129,6 +138,7 @@ class trade_coin(object):
                 self.direction = self.mv_direction()
 
             self.get_open_interest()
+
             self.usdt_total=self.get_usdt_total()
             if time.time()-self.asset_time>60:
                 self.asset_time=time.time()
@@ -204,14 +214,15 @@ class trade_coin(object):
                 cur_SFrame_vwap_up_sl = self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-1]
 
                 if sig_long != None or sig_short != None:
-                    print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, sig_long=={sig_long\
-                            }, self.upl_short_open=={self.upl_short_open==1}, sig_short=={sig_short}, ',
+                    print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, \n\t sig_long=={sig_long\
+                            },\nself.upl_short_open=={self.upl_short_open==1}, \n\tsig_short=={sig_short}, ',
                         '--3'*100)
                 else:
                     if time.time() - self.asset_time > 120:
                         self.cancel_order()
 
-                atr_1x =  self.multiFrameVwap.atr.iloc[-1]
+                # atr_1x =  self.multiFrameVwap.atr.iloc[-1]
+                atr_1x = 0  #sl open 不用处理为atr开仓，否则多半会开不到
 
                 symbol=self.symbol
                 try:

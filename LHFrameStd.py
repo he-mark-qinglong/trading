@@ -223,6 +223,9 @@ class MultiTFvp_poc:
         slow, shigh = self.slow_poc, self.shigh_poc
         hlow, hhigh = self.hlow_poc, self.hhigh_poc
 
+        hlow = np.minimum(slow, hlow)
+        hhigh = np.maximum(shigh, hhigh)
+
         # SFrame
         self.SFrame_vwap_up_poc    = rma_s(shigh)
         self.SFrame_vwap_up_getin  = rma_s(shigh + self.SFrame_price_std * self.febonaqis[3])
@@ -235,21 +238,15 @@ class MultiTFvp_poc:
         self.SFrame_vwap_down_sl2    = rma_s(slow - self.SFrame_price_std * self.febonaqis[5])
 
         # HFrame（取更保守的 max/min）
-        self.HFrame_vwap_up_poc    = rma(hhigh) #np.maximum(self.SFrame_vwap_up_getin, rma(hhigh))
-        self.HFrame_vwap_up_getin  = np.maximum(self.SFrame_vwap_up_getin,
-                                                rma(hhigh + self.HFrame_price_std))
-        self.HFrame_vwap_up_sl     = np.maximum(self.SFrame_vwap_up_sl,
-                                                rma(hhigh + 2*self.HFrame_price_std))
-        self.HFrame_vwap_up_sl2    = np.maximum(self.SFrame_vwap_up_sl2,
-                                                rma(hhigh + 4*self.HFrame_price_std))
+        self.HFrame_vwap_up_poc    = rma(hhigh)
+        self.HFrame_vwap_up_getin  = rma(hhigh + self.HFrame_price_std* self.febonaqis[3])
+        self.HFrame_vwap_up_sl     = rma(hhigh + self.HFrame_price_std* self.febonaqis[4])
+        self.HFrame_vwap_up_sl2    = rma(hhigh + self.HFrame_price_std* self.febonaqis[5])
 
-        self.HFrame_vwap_down_poc    = rma(hlow) #np.minimum(self.SFrame_vwap_down_getin, rma(hlow))
-        self.HFrame_vwap_down_getin  = np.minimum(self.SFrame_vwap_down_getin,
-                                                  rma(hlow - self.HFrame_price_std))
-        self.HFrame_vwap_down_sl     = np.minimum(self.SFrame_vwap_down_sl,
-                                                  rma(hlow - 2*self.HFrame_price_std))
-        self.HFrame_vwap_down_sl2    = np.minimum(self.SFrame_vwap_down_sl2,
-                                                  rma(hlow - 4*self.HFrame_price_std))
+        self.HFrame_vwap_down_poc    = rma(hlow)
+        self.HFrame_vwap_down_getin  = rma(hlow - self.HFrame_price_std* self.febonaqis[3])
+        self.HFrame_vwap_down_sl     = rma(hlow - self.HFrame_price_std* self.febonaqis[4])
+        self.HFrame_vwap_down_sl2    = rma(hlow - self.HFrame_price_std* self.febonaqis[3]) 
 
     def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
         """
