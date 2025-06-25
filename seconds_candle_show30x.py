@@ -26,7 +26,8 @@ DEBUG = False
 
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x" if   use30x else "ohlcv")
-
+# client = SQLiteWALClient(db_path=DB_PATH, table="binance_30x")
+# client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_30x")
 trade_client = None
 
 windowConfig = LHFrameStd.WindowConfig()
@@ -35,8 +36,8 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
                                      window_SFrame=windowConfig.window_tau_s)
 
 
-LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 444)
-LIMIT_K_N = 500 + LIMIT_K_N_APPEND  #+ 5700
+LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
+LIMIT_K_N = 400 + LIMIT_K_N_APPEND # + 700
 
 
 def read_and_sort_df(is_append=True):
@@ -111,12 +112,13 @@ def update_graph(n):
             # **{k:'firebrick' for k in ["LFrame_vp_poc"]},
             **{k:'purple'    for k in ["SFrame_vp_poc"]},
             **{k:'magenta'    for k in ["HFrame_vp_poc"]},
-            # **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             # **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             
-            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
-            # **{k:'darkslategray'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
+            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
+            **{k:'blue'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
+            **{k:'darkslategray'   for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
             
         }.items():
             series = getattr(multiVwap, name, None)

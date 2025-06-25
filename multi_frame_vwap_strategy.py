@@ -76,7 +76,8 @@ class VolumeSpikeCondition:
         arr = df[self.vol_key].iloc[-self.window:].to_numpy().astype(float)
         if arr.size < self.window:
             return False
-        return arr[-1] > arr.mean() + self.mult * arr.std(ddof=0)
+        is_uppon_std = arr[-1] > arr.mean() + self.mult * arr.std(ddof=0)
+        return is_uppon_std
 
 # —— 6) 单根大振幅 Bar 过滤 —— 
 @dataclass
@@ -390,11 +391,12 @@ class RuleConfig:
             amount=1,
             conds=[
                 AndCondition([
-                    VolumeSpikeCondition("df", "vol", window=80, mult=2),
-                    ConsecutiveCondition("SFrame_vwap_down_sl2", "below", 1),
+                    # VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                    # ConsecutiveCondition("SFrame_vwap_down_poc", "below", 8),
+                    ConsecutiveCondition("SFrame_vp_poc", "below", 2),
                 ])
             ],
-            limit_price_attr="SFrame_vwap_down_sl2"
+            limit_price_attr="HFrame_vwap_down_sl2"
         ),
 
     ])
@@ -429,11 +431,14 @@ class RuleConfig:
             amount=1,
             conds=[
                 AndCondition([
-                    VolumeSpikeCondition("df", "vol", window=80, mult=2),
-                    ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
+                    # VolumeSpikeCondition("df", "vol", window=80, mult=1),
+                    # ConsecutiveCondition("SFrame_vwap_up_poc", "above", 2),
+                    ConsecutiveCondition("SFrame_vp_poc", "above", 2),
+                    
+                    # ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
                 ])
             ],
-            limit_price_attr="SFrame_vwap_up_sl2"
+            limit_price_attr="HFrame_vwap_up_sl2"
         ),
     ])
 

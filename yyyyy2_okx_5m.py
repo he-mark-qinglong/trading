@@ -44,7 +44,7 @@ from LHFrameStd import MultiTFvp_poc, plot_all_multiftfpoc_vars, WindowConfig
 
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 700 + LIMIT_K_N_APPEND #+ 1000
+LIMIT_K_N = 400 + LIMIT_K_N_APPEND #+ 1000
 DEBUG = False 
 DEBUG = True
 
@@ -106,7 +106,7 @@ class trade_coin(object):
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
         self.strategy = MultiFramePOCStrategy(long_rule=RuleConfig.long_rule, 
                                               short_rule=RuleConfig.short_rule, 
-                                              timeout=150 * 30)  #最多挂单时间：2.5m x 30 = 75m。
+                                              timeout=30)  #最多挂单时间：150s=2.5m 
         self.strategy_log_interval = 0
 
         self.max_history_long_profit = 0
@@ -119,14 +119,19 @@ class trade_coin(object):
 
     def get_open_interest(self):
         oi_result = self.publicAPI.get_open_interest('SWAP', instId=self.symbol)
-        print('******', oi_result)
+        
         funding_rate = self.publicAPI.get_funding_rate(instId=self.symbol)
         fundingRate = float(funding_rate['data'][0]['fundingRate'])
-        print("######", f"fundingRate={fundingRate}  {'空头居多' if fundingRate <= 0 else '多头居多'}")
-
+        print("######", f"fundingRate={fundingRate}  持仓手续费的正负代表--{'空头居多' if fundingRate <= 0 else '多头居多'}")
+    
+        print('****** oi_result:', oi_result)
+        
+        return 
+    
         odb = self.marketAPI.get_orderbook(instId=self.symbol, sz=10)
         asks = odb['data'][0]['asks']
         bids = odb['data'][0]['bids']
+        print('------orderbook')
         print(asks)
         print(bids)
 
@@ -192,8 +197,9 @@ class trade_coin(object):
                     # 2) 评估新信号并下单
                     all_values = sum(positionAmount_dict_sub.values())
                     open2equity_pct = all_values/self.usdt_total
-                    sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
+
                     sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
+                    sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
                     
                     if self.strategy_log_interval % 20 == 0:
                         print(self.strategy.eval_history[-1])
@@ -210,8 +216,8 @@ class trade_coin(object):
                     
                 cur_SFrame_vwap_up_poc = self.multiFrameVwap.SFrame_vwap_up_poc.iloc[-1]
                 cur_SFrame_vwap_down_poc = self.multiFrameVwap.SFrame_vwap_down_poc.iloc[-1]
-                cur_SFrame_vwap_down_sl = self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-1]
-                cur_SFrame_vwap_up_sl = self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-1]
+                cur_HFrame_vwap_down_sl = self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-1]
+                cur_HFrame_vwap_up_sl = self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-1]
 
                 if sig_long != None or sig_short != None:
                     print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, \n\t sig_long=={sig_long\
@@ -221,8 +227,27 @@ class trade_coin(object):
                     if time.time() - self.asset_time > 120:
                         self.cancel_order()
 
-                # atr_1x =  self.multiFrameVwap.atr.iloc[-1]
-                atr_1x = 0  #sl open 不用处理为atr开仓，否则多半会开不到
+
+                atr_1x =  self.multiFrameVwap.atr.iloc[-1]
+                if 0:
+                    if self.direction == -2:
+                        negative_atr = atr_1x
+                        positive_atr = 0
+                    elif self.direction == 2:
+                        negative_atr = 0
+                        positive_atr = atr_1x
+                    elif self.direction == -1:
+                        negative_atr = atr_1x / 2
+                        positive_atr = 0
+                    elif self.direction == 1:
+                        negative_atr = 0
+                        negative_atr = atr_1x / 2
+                    else:
+                        negative_atr = 0
+                        positive_atr = 0
+                else:
+                    negative_atr = 0
+                    positive_atr = 0
 
                 symbol=self.symbol
                 try:
@@ -248,10 +273,10 @@ class trade_coin(object):
                 if self.asset_normal==1 and self.upl_short_open==1 and sig_short != None and sig_short.action:
                     #开空
                     try:  
-                        if not amount_long == 0 and 1 :
+                        if amount_long == 0 and 1 :
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
-                            price0=max(sig_short.price + atr_1x, self.coin_data['high'].tail(100).max()) #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(20).max()) #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
                             price = price0
                             fv=self.fv[self.symbol]
                             amount=sig_short.amount  #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_short))
@@ -260,7 +285,7 @@ class trade_coin(object):
                             place_order=self.create_order1(symbol,price,amount,model) 
                             print(place_order,symbol,model)
                             try:
-                                plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
+                                # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
                                 logging.info((self.user,symbol,'sig_short.price',sig_short.price,'price0',price0,time11,model))
                             except:
                                 pass
@@ -273,17 +298,17 @@ class trade_coin(object):
                 if self.asset_normal==1 and self.upl_long_open==1 and sig_long != None and sig_long.action:
                     #开多
                     try:  
-                        if 1 and not amount_short == 0:
+                        if 1 and amount_short == 0:
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
-                            price0=min(sig_long.price - atr_1x, self.coin_data['low'].tail(100).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(20).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
                             price=price0
                             fv=self.fv[self.symbol]
                             amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model)
                             try:
-                                plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
+                                # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
                                 logging.info((self.user,symbol,'sig_long.price',sig_long.price,'price0',price0,time11,model))
                             except:
                                 pass
@@ -313,7 +338,7 @@ class trade_coin(object):
                         def close_short(close_amount, price0, instantly = False):
                             if close_amount > 0:
                                 model='sellshort'
-                                price=price0 + atr_1x if instantly else price0*(1- 0.0001)
+                                price=price0 + negative_atr if instantly else price0*(1- 0.0001)
                                 amount=max(close_amount, 1)
                                 symbol=self.symbol
                                 place_order=self.create_order1(symbol,price,amount,model)
@@ -330,7 +355,7 @@ class trade_coin(object):
                             self.max_history_short_profit = max(self.max_history_short_profit, short_profit)
 
                             # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
-                            consecutive_belowsl = (self.multiFrameVwap.SFrame_vwap_down_sl.iloc[-3:].to_numpy() > close.iloc[-3:].to_numpy()).sum() >= 2
+                            consecutive_belowsl = (self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-3:].to_numpy() > close.iloc[-3:].to_numpy()).sum() >= 2
                             # 2) 中心线止盈
                             consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4
                             cross_center_and_tp = consecutive_cross_center \
@@ -339,7 +364,7 @@ class trade_coin(object):
                             cross_down_and_tp = (cur_close <= cur_SFrame_vwap_down_poc) \
                                                 and (short_profit > fee_require_profit)
                             # 4) 常规止损：跌破  cur_HFrame_vwap_down_sl（不论盈亏都平）
-                            below_sl = (cur_close <=  cur_SFrame_vwap_down_sl)
+                            below_sl = (cur_close <=  cur_HFrame_vwap_down_sl)
 
                             # ---- 执行顺序：①连续突破 ②中心止盈 ③下轨止盈 ④常规止损
                             close_amount = 0
@@ -362,7 +387,7 @@ class trade_coin(object):
                         def close_long(close_amount, price0, instantly = False):
                             if close_amount > 0:
                                 model='selllong'
-                                price=price0 - atr_1x if instantly else price0*(1 + 0.0001)
+                                price=price0 - positive_atr if instantly else price0*(1 + 0.0001)
                                 amount=max(close_amount, 1)
                                 symbol=self.symbol
                                 place_order=self.create_order1(symbol,price,amount,model)
@@ -379,8 +404,8 @@ class trade_coin(object):
                         else:
                             self.max_history_long_profit = max(self.max_history_long_profit, long_profit)
 
-                            # 1) 最近 3 根 K 线里 ≥2 根 cur_SFrame_vwap_up_sl 被突破 → 直接全平
-                            consecutive_upponsl = (self.multiFrameVwap.SFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
+                            # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
+                            consecutive_upponsl = (self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
                             # 2) 中心线止盈：收盘在中心线上方，且利润达 exit_required_profit
                             consecutive_cross_center = (self.multiFrameVwap.SFrame_vp_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4
                             cross_center_and_tp = consecutive_cross_center and (long_profit > exit_required_profit)
@@ -388,7 +413,7 @@ class trade_coin(object):
                             cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
                                             and (long_profit > fee_require_profit) and  exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['sma_scaled'].iloc[-1]
                             # 4) 常规止损（突破 HFrame 上轨），不论盈亏都平
-                            upon_sl = cur_close >= cur_SFrame_vwap_up_sl
+                            upon_sl = cur_close >= cur_HFrame_vwap_up_sl
 
                             # 默认不平仓
                             close_amount = 0
@@ -901,7 +926,7 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(30)
+                time.sleep(3)
             for t in threads:
                 t.join()
         except:
