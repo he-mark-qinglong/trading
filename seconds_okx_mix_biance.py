@@ -75,7 +75,7 @@ async def collect_binance(queue: asyncio.Queue):
     """订阅 Binance aggTrade，产出 1×、30× K 线，推到 queue"""
     while True:
         try:
-            async with websockets.connect(BINANCE_WS, ping_interval=20, ping_timeout=20) as ws:
+            async with websockets.connect(BINANCE_WS, ping_interval=5, ping_timeout=20) as ws:
                 cache = []
                 ts0 = int(time.time())
                 print("[Binance] subscribed")
@@ -97,6 +97,7 @@ async def collect_binance(queue: asyncio.Queue):
 
 
                         cache, ts0 = [], now
+            time.sleep(1)
         except (websockets.exceptions.ConnectionClosedError,
                 websockets.exceptions.ConnectionClosedOK,
                 asyncio.TimeoutError,

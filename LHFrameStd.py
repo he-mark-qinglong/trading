@@ -13,7 +13,7 @@ class WindowConfig:
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         #参数解释，按照日线的趋势均线规则，参数取, 5,14,30. 但是30作为短线回归几乎不太有效（后续资金量如果比较大可以考虑)，所以30周期的先不用。
         #全部基于1h的级别基础之上来乘以这个系数.
-        self.window_tau_s = int(336*self.febonaqis[0])  #1d = 1h x 24, 14x24 == 336
+        self.window_tau_s = int(600*self.febonaqis[0])  #1d = 1h x 24, 14x24 == 336
         self.window_tau_h = int(120*self.febonaqis[0])     #8h = 1h x 12, 5x24 == 120
         self.window_tau_l = int(24*self.febonaqis[0])   #1h = 2.5m x 24
 
@@ -30,7 +30,7 @@ class MultiTFvp_poc:
         self.window_SFrame       = window_SFrame
         self.std_window_LFrame   = std_window_LFrame
         self.rma_smooth_window   = std_window_LFrame
-        self.rma_smooth_window_s   = std_window_LFrame * 2
+        self.rma_smooth_window_s   = std_window_LFrame 
         
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         
@@ -39,9 +39,9 @@ class MultiTFvp_poc:
         self.df = None
 
         # 各种结果的全量 Series（索引与 self.df 保持一致）
-        self.LFrame_vp_poc = pd.Series(dtype=float)
-        self.HFrame_vp_poc       = pd.Series(dtype=float)
-        self.SFrame_vp_poc       = pd.Series(dtype=float)
+        self.LFrame_vwap_poc = pd.Series(dtype=float)
+        self.HFrame_vwap_poc       = pd.Series(dtype=float)
+        self.SFrame_vwap_poc       = pd.Series(dtype=float)
         self.slow_poc            = pd.Series(dtype=float)
         self.shigh_poc           = pd.Series(dtype=float)
         self.hlow_poc            = pd.Series(dtype=float)
@@ -73,27 +73,27 @@ class MultiTFvp_poc:
         with ThreadPoolExecutor(max_workers=3) as ex:
             fL = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_LFrame, 40, 0.995, 0.99,
+                           self.window_LFrame, 60, 0.995, 0.99,
                            debug=debug)
             fH = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_HFrame, 40, 1-0.0027, 0.99,
+                           self.window_HFrame, 60, 1-0.0027, 0.99,
                            debug=debug)
             fS = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_SFrame, 40, 1-0.0027, 0.99,
+                           self.window_SFrame, 60, 1-0.0027, 0.99,
                            debug=debug)
             hvp = fH.result()
             svp = fS.result()
             fbH = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
-                            length=self.window_HFrame, bins=40,
-                            pct=0.0027, decay=0.995, vwap_series=hvp,
+                            length=self.window_HFrame, bins=60,
+                            pct=0.0027/2, decay=0.995, vwap_series=hvp,
                             debug=debug)
             fbS = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
-                            length=self.window_SFrame, bins=40,
-                            pct=0.0027, decay=0.995, vwap_series=svp,
+                            length=self.window_SFrame, bins=60,
+                            pct=0.0027/2, decay=0.995, vwap_series=svp,
                             debug=debug)
 
         idx = df_block.index
@@ -171,9 +171,9 @@ class MultiTFvp_poc:
                 return old
             return pd.concat([old, new])
 
-        self.LFrame_vp_poc = take_new(self.LFrame_vp_poc, out['L'])
-        self.HFrame_vp_poc       = take_new(self.HFrame_vp_poc,       out['H'])
-        self.SFrame_vp_poc       = take_new(self.SFrame_vp_poc,       out['S'])
+        self.LFrame_vwap_poc = take_new(self.LFrame_vwap_poc, out['L'])
+        self.HFrame_vwap_poc       = take_new(self.HFrame_vwap_poc,       out['H'])
+        self.SFrame_vwap_poc       = take_new(self.SFrame_vwap_poc,       out['S'])
         self.slow_poc            = take_new(self.slow_poc,            out['slow'])
         self.shigh_poc           = take_new(self.shigh_poc,           out['shigh'])
         self.hlow_poc            = take_new(self.hlow_poc,            out['hlow'])
@@ -192,7 +192,7 @@ class MultiTFvp_poc:
         self.LFrame_ohlc5_series = pd.Series(close.values, index=close.index)
 
         # 2) RMA 平滑
-        self.SFrame_vp_poc = ta.rma(self.SFrame_vp_poc,
+        self.SFrame_vwap_poc = ta.rma(self.SFrame_vwap_poc,
                                     length=self.rma_smooth_window_s)
 
         # 3) swing 用于 std
@@ -203,19 +203,18 @@ class MultiTFvp_poc:
             dl_min = d_low.rolling(240).min().abs()
             return np.maximum(dh_max, dl_min)
 
-        H_swing = swing(self.HFrame_vp_poc)
-        S_swing = swing(self.SFrame_vp_poc)
+        H_swing = swing(self.HFrame_vwap_poc)
+        S_swing = swing(self.SFrame_vwap_poc)
 
         # 4) 价格 std
         self.SFrame_price_std = (
             close.rolling(self.window_SFrame).std() * 0.9
             + S_swing * 0.1
         ) 
-        h_std = (
+        self.HFrame_price_std = (
             close.rolling(self.window_HFrame).std() * 0.9
             + H_swing * 0.1
         ) 
-        self.HFrame_price_std = pd.Series(h_std.values, index=close.index)
 
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
         rma = lambda s: ta.rma(s, length=self.rma_smooth_window)
@@ -239,22 +238,22 @@ class MultiTFvp_poc:
 
         # HFrame（取更保守的 max/min）
         self.HFrame_vwap_up_poc    = rma(hhigh)
-        self.HFrame_vwap_up_getin  = rma(hhigh + self.HFrame_price_std* self.febonaqis[3])
-        self.HFrame_vwap_up_sl     = rma(hhigh + self.HFrame_price_std* self.febonaqis[4])
+        self.HFrame_vwap_up_getin  = rma(hhigh + self.HFrame_price_std* self.febonaqis[1])
+        self.HFrame_vwap_up_sl     = rma(hhigh + self.HFrame_price_std* self.febonaqis[3])
         self.HFrame_vwap_up_sl2    = rma(hhigh + self.HFrame_price_std* self.febonaqis[5])
 
         self.HFrame_vwap_down_poc    = rma(hlow)
-        self.HFrame_vwap_down_getin  = rma(hlow - self.HFrame_price_std* self.febonaqis[3])
-        self.HFrame_vwap_down_sl     = rma(hlow - self.HFrame_price_std* self.febonaqis[4])
-        self.HFrame_vwap_down_sl2    = rma(hlow - self.HFrame_price_std* self.febonaqis[3]) 
+        self.HFrame_vwap_down_getin  = rma(hlow - self.HFrame_price_std* self.febonaqis[1])
+        self.HFrame_vwap_down_sl     = rma(hlow - self.HFrame_price_std* self.febonaqis[3])
+        self.HFrame_vwap_down_sl2    = rma(hlow - self.HFrame_price_std* self.febonaqis[5]) 
 
-    def calculate_SFrame_vp_poc_and_std(self, coin_date_df, debug=False):
+    def calculate_SFrame_vwap_poc_and_std(self, coin_date_df, debug=False):
         """
         旧接口兼容：清空后全量跑一次。
         """
         self.df = None
         for attr in [
-            'LFrame_vp_poc','HFrame_vp_poc','SFrame_vp_poc',
+            'LFrame_vwap_poc','HFrame_vwap_poc','SFrame_vwap_poc',
             'slow_poc','shigh_poc','hlow_poc','hhigh_poc'
         ]:
             setattr(self, attr, pd.Series(dtype=float))
@@ -327,13 +326,13 @@ class MultiTFvp_poc:
             return s.rolling(per).mean()
 
         # --- 1) 计算 src ---
-        src = self.LFrame_vp_poc.reindex(df.index)
+        src = self.LFrame_vwap_poc.reindex(df.index)
         if sm:
             src = ema(src, smp)
 
         # --- 2) 计算 fast/slow momentum ---
         p = 2 * momentumPeriod + 1
-        base_sma = sma(self.LFrame_vp_poc, p).reindex(df.index)
+        base_sma = sma(self.LFrame_vwap_poc, p).reindex(df.index)
         df['amom']  = 100 * (src / base_sma - 1)
         df['amoms'] = sma(df['amom'], signalPeriod)
 
@@ -364,145 +363,6 @@ class MultiTFvp_poc:
         )
         
         return df #df[['datetime', 'amom','amoms','hl','hlc']].reindex(self.df.index)
-
-import os
-import time
-import matplotlib  
-matplotlib.use('Agg')  # 无GUI后端，适合生成图像文件，不显示窗口  
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime
-
-def plot_all_multiftfpoc_vars(multFramevp_poc,
-                              symbol='',
-                              is_trading=False,
-                              save_to_file=True):
-    # —— 开头：确保所有 index 都是 DatetimeIndex —— 
-    df = getattr(multFramevp_poc, 'df', None)
-    if isinstance(df, pd.DataFrame):
-        # 如果没有 datetime 列，就把原 ts 索引（int 秒）转换
-        if not isinstance(df.index, pd.DatetimeIndex):
-            # 假设原 index 是 unix timestamp (s)
-            df = df.copy()
-            df.index = pd.to_datetime(df.index.astype(int), unit='s')
-        # 如果你还有单独的 datetime 列，也可以更新一下
-        if 'datetime' in df.columns:
-            df['datetime'] = pd.to_datetime(df['datetime'])
-        multFramevp_poc.df = df
-
-    # 其它 series 也同理
-    vars_to_plot = [
-      'LFrame_vp_poc','SFrame_vp_poc', 'SFrame_vwap_up_poc',
-      'SFrame_vwap_up_sl','SFrame_vwap_down_poc','SFrame_vwap_down_sl',
-      'HFrame_vwap_up_getin','HFrame_vwap_up_sl','HFrame_vwap_up_sl2',
-      'HFrame_vwap_down_getin','HFrame_vwap_down_sl','HFrame_vwap_down_sl2',
-    ]
-    for var in vars_to_plot:
-        s = getattr(multFramevp_poc, var, None)
-        if isinstance(s, pd.Series) and not isinstance(s.index, pd.DatetimeIndex):
-            setattr(multFramevp_poc, var, 
-                    pd.Series(s.values,
-                              index=pd.to_datetime(s.index.astype(int), unit='s'),
-                              name=s.name))
-
-    # ———— 开始画图 ————
-    fig, (ax_k, ax_vol) = plt.subplots(
-        2,1, figsize=(15,8), sharex=True,
-        gridspec_kw={'height_ratios':[7,3]},
-        constrained_layout=True
-    )
-    fig.patch.set_facecolor('black')
-    ax_k.set_facecolor('black')
-    ax_vol.set_facecolor('black')
-
-    # 1) K 线 / close
-    if isinstance(df, pd.DataFrame) and {'open','high','low','close'}.issubset(df.columns):
-        times = mdates.date2num(df.index.to_pydatetime())
-        o,h,l,c = df['open'].values, df['high'].values, df['low'].values, df['close'].values
-        quotes = np.column_stack([times, o, h, l, c])
-        try:
-            from mplfinance.original_flavor import candlestick_ohlc
-            candlestick_ohlc(
-                ax_k, quotes,
-                width=(df.index[1]-df.index[0]).seconds/86400*0.8,
-                colorup='lime', colordown='red', alpha=0.7
-            )
-        except ImportError:
-            ax_k.plot(df.index, c, color='white', label='Close', linewidth=1)
-    else:
-        # fallback
-        for var in ['LFrame_ohlc5_series','close']:
-            s = getattr(multFramevp_poc, var, None)
-            if isinstance(s, pd.Series):
-                ax_k.plot(s.index, s.values,
-                          color='lightgray', linewidth=1, label=var)
-                break
-
-    # 2) 其它 series
-    colors = { # … 同上略 …
-        'LFrame_vp_poc':'yellow','SFrame_vp_poc':'purple',
-        # …
-    }
-    for var in vars_to_plot:
-        s = getattr(multFramevp_poc, var, None)
-        if isinstance(s, pd.Series) and not s.isna().all():
-            ax_k.plot(
-                s.index, s.values,
-                label=var, color=colors.get(var,'white'),
-                linewidth=2 if 'HFrame' not in var else 1,
-                linestyle='-' if '_poc' in var else 'dotted'
-            )
-
-    # 3) 色带
-    def _fill(a,b,idx,color):
-        ax_k.fill_between(
-            idx, a.values, b.values,
-            color=color, alpha=0.2
-        )
-    up1 = getattr(multFramevp_poc,'HFrame_vwap_up_getin',None)
-    up2 = getattr(multFramevp_poc,'HFrame_vwap_up_sl',None)
-    if isinstance(up1,pd.Series) and isinstance(up2,pd.Series):
-        _fill(up1, up2, up1.index, "hotpink")
-    dn1 = getattr(multFramevp_poc,'HFrame_vwap_down_sl',None)
-    dn2 = getattr(multFramevp_poc,'HFrame_vwap_down_getin',None)
-    if isinstance(dn1,pd.Series) and isinstance(dn2,pd.Series):
-        _fill(dn1, dn2, dn1.index, "deepskyblue")
-
-    # 4) 成交量
-    if isinstance(df, pd.DataFrame) and 'vol' in df.columns:
-        ax_vol.bar(df.index, df['vol'].values,
-                   width=(df.index[1]-df.index[0]).seconds/86400*0.8,
-                   color='dodgerblue', alpha=0.6)
-
-    # 5) 格式化 x 轴
-    ax_vol.xaxis.set_major_locator(mdates.AutoDateLocator())
-    ax_vol.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
-    # fig.autofmt_xdate(rotation=10)
-    for ax in (ax_k, ax_vol):
-        ax.xaxis.set_tick_params(rotation=10)
-
-    # 6) 其余美化略……
-    ax_k.set_title(f"{symbol} vp_poc/VWAP - {datetime.now()}", color='w')
-    #ax_k.legend(loc='upper left', facecolor='black', labelcolor='white')
-    ax_k.legend(
-        loc="lower center",
-        bbox_to_anchor=(0.5, -0.15),
-        ncol=4,  # 可自行调节，一行排4~5个
-        fontsize="small",
-        facecolor="black",
-        labelcolor="white"
-    )
-    ax_k.grid(True, alpha=0.2)
-    ax_vol.grid(True, alpha=0.2)
-
-    if save_to_file:
-        os.makedirs("plots", exist_ok=True)
-        fn = f"plots/{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        fig.savefig(fn, facecolor=fig.get_facecolor())
-        plt.close(fig)
-        print("Saved to", fn)
-    else:
-        return fig
 
 
 def rsi_with_ema_smoothing(coin_date_df, length=13):  

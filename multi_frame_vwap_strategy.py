@@ -62,7 +62,72 @@ class ConsecutiveCondition:
         else:
             return support_resistance.consecutive_below_support(
                 close_series, thresh, self.count)
+from dataclasses import dataclass
+import pandas as pd
+from typing import Optional
 
+@dataclass
+class BarsAwayFromThresholdCondition:
+    """
+    判断从最近一次“触及阈值”到当前，是否已过去至少 count 根 K 线。
+    data_attr:   data_src 上存阈值的 Series 名称
+    comparator:  "above" 表示 Price <= thresh 时视为触及；“below”则 Price >= thresh
+    count:       至少要脱离阈值多少根 Bar
+    """
+    data_attr: str
+    comparator: str
+    count: int
+
+    def check(self,
+              close_series: pd.Series,
+              data_src,
+              cur_close: float) -> bool:
+        # 1) 拿到收盘价和阈值，两端都 dropna
+        closes = close_series.dropna()
+        thresh = getattr(data_src, self.data_attr).dropna()
+        if len(thresh) == 0:
+            return False
+
+        # 2) 尾部对齐：取最近 len(thresh) 根收盘价
+        if len(closes) < len(thresh):
+            return False
+        closes_tail = closes.iloc[-len(thresh):]
+
+        # 3) 从后往前找“最后一次触及”位置
+        last_touch = None  # 在 closes_tail 中的位置 index
+        for i in range(len(thresh) - 1, -1, -1):
+            p = closes_tail.iat[i]
+            t = thresh.iat[i]
+            if self.comparator == "above":
+                # 触及阈值意味着 p <= t
+                if p <= t:
+                    last_touch = i
+                    break
+            else:
+                # 触及阈值意味着 p >= t
+                if p >= t:
+                    last_touch = i
+                    break
+
+        # 4) 计算脱离后的 Bar 数
+        if last_touch is None:
+            # 从来没触及过，则全部 len(closes_tail) 都算“脱离”
+            bars_away = len(closes_tail)
+        else:
+            bars_away = len(closes_tail) - 1 - last_touch
+
+        return bars_away >= self.count
+
+    def price(self,
+              close_series: pd.Series,
+              data_src) -> Optional[float]:
+        return None
+
+    def price(self,
+              close_series: pd.Series,
+              data_src) -> Optional[float]:
+        return None
+    
 # —— 5) 成交量突增过滤 —— 
 @dataclass
 class VolumeSpikeCondition:
@@ -84,7 +149,7 @@ class VolumeSpikeCondition:
 class BarSpikeCondition:
     df_attr:      str   # e.g. "df"
     direction:    str   # e.g. "up"/"down"
-    open_thresh:  str   # e.g. "SFrame_vp_poc"
+    open_thresh:  str   # e.g. "SFrame_vwap_poc"
     open_cmp:     str   # "above"/"below"
     close_thresh: str   # e.g. "HFrame_vwap_down_getin"
     close_cmp:    str   # "above"/"below"
@@ -150,10 +215,12 @@ class MultiFramePOCStrategy:
     def __init__(self,
                  long_rule: EntryRule,
                  short_rule: EntryRule,
-                 timeout: float = 60.0):
+                 timeout: float = 60.0,
+                 max_open2equity_pct = 0.4):
         self.long_rule   = long_rule
         self.short_rule  = short_rule
         self.timeout     = timeout
+        self.max_open2equity_pct = max_open2equity_pct
         self._opened: Dict[str, Set[str]] = {"long": set(), "short": set()}
         self._has_order: Dict[str, bool] = {"long": False, "short": False}
         self._order_time: Dict[str, Optional[float]] = {"long": None, "short": None}
@@ -176,7 +243,7 @@ class MultiFramePOCStrategy:
         }
 
         # 1. 先判断整体能否继续
-        if self._has_order[side] or open2equity_pct >= 3:
+        if self._has_order[side] or open2equity_pct >= self.max_open2equity_pct:
             record["skipped"] = True
             self.eval_history.append(record)
             return None
@@ -327,11 +394,11 @@ class SequenceWithForbidden(Condition):
 
 
 # 假设已经有 PriceTouchCondition：
-mid_d2u_touch   = PriceTouchCondition("SFrame_vp_poc",      comparator="above", window=200)
+mid_d2u_touch   = PriceTouchCondition("SFrame_vwap_poc",      comparator="above", window=200)
 up_sl_touch = PriceTouchCondition("HFrame_vwap_up_sl",   comparator="above", window=200)
 up_poc_touch = PriceTouchCondition("HFrame_vwap_up_poc", comparator="above", window=200)
 
-mid_u2d_touch   = PriceTouchCondition("SFrame_vp_poc",      comparator="below", window=200)
+mid_u2d_touch   = PriceTouchCondition("SFrame_vwap_poc",      comparator="below", window=200)
 down_sl_touch  = PriceTouchCondition("HFrame_vwap_down_sl", comparator="below", window=200)
 down_poc_touch = PriceTouchCondition("HFrame_vwap_down_poc", comparator="bellow", window=200)
 
@@ -387,16 +454,24 @@ class RuleConfig:
         # ),
 
         EntryTier(
-            name="below_down_sl2_and_volspike",
-            amount=1,
+            name="below_down_poc_and_volspike",
+            amount=3,
             conds=[
-                AndCondition([
-                    # VolumeSpikeCondition("df", "vol", window=80, mult=2),
-                    # ConsecutiveCondition("SFrame_vwap_down_poc", "below", 8),
-                    ConsecutiveCondition("SFrame_vp_poc", "below", 2),
+                OrCondition([
+                    AndCondition([
+                        # VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                        ConsecutiveCondition("HFrame_vwap_poc", "below", 4),
+                        ConsecutiveCondition("SFrame_vwap_poc", "below", 10),
+                        #价格已经连续 30 根 K 线在 SFrame_vwap_up_getin 之下,以避免短期极强的动能冲击，太早介入可能浮亏比较大。
+                        BarsAwayFromThresholdCondition("HFrame_vwap_up_poc", "below", 30),
+                    ]),
+                    AndCondition([
+                        ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 4),
+                        VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                    ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_down_sl2"
+            limit_price_attr="SFrame_vwap_down_getin"
         ),
 
     ])
@@ -428,18 +503,27 @@ class RuleConfig:
 
         EntryTier(
             name="uppon_up_sl2_and_volspike",
-            amount=1,
+            amount=3,
             conds=[
-                AndCondition([
-                    # VolumeSpikeCondition("df", "vol", window=80, mult=1),
-                    # ConsecutiveCondition("SFrame_vwap_up_poc", "above", 2),
-                    ConsecutiveCondition("SFrame_vp_poc", "above", 2),
-                    
-                    # ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 1),
+                OrCondition([
+                    AndCondition([
+                    #     # VolumeSpikeCondition("df", "vol", window=80, mult=1),
+                        ConsecutiveCondition("SFrame_vwap_poc", "above", 2),
+                        ConsecutiveCondition("HFrame_vwap_poc", "above", 10),
+                    #     # #价格已经连续 30 根 K 线在 SFrame_vwap_down_getin 之上，以避免短期极强的动能冲击，太早介入可能浮亏比较大。
+                        BarsAwayFromThresholdCondition("HFrame_vwap_down_poc", "above", 30),
+                        
+                    ]),
+                    AndCondition([
+                        ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 4),
+                        VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                    ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_up_sl2"
+            limit_price_attr="SFrame_vwap_up_getin"
         ),
+
+
     ])
 
 

@@ -44,10 +44,10 @@ def apply_snapshot(rec):
 # （可保留或移除，按需）
 last_ts = time.time()
 bid_eaten = ask_eaten = 0.0
-WINDOW = 5.0  # 秒
+WINDOW = INTERVAL  # 秒
 
 def apply_update(rec):
-    global bid_eaten, ask_eaten, last_ts
+    global bid_eaten, ask_eaten
     for p, s, *_ in rec["bids"]:
         price, size = float(p), float(s)
         old = bids_map.get(price, 0.0)
@@ -67,16 +67,9 @@ def apply_update(rec):
         else:
             asks_map[price] = size
 
-    now = time.time()
-    if now - last_ts >= WINDOW:
-        bid_rate = bid_eaten / WINDOW
-        ask_rate = ask_eaten / WINDOW
-        print(f"[{WINDOW}s] bid_eat_rate={bid_rate:.4f}, ask_eat_rate={ask_rate:.4f} is_bid_eat_stronger={bid_rate > ask_rate}")
-        bid_eaten = ask_eaten = 0.0
-        last_ts = now
-
 async def _collect_books_once():
     global df_vwap_metrics
+    global bid_eaten, ask_eaten, last_ts
 
     async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
         await ws.send(json.dumps({
@@ -96,6 +89,7 @@ async def _collect_books_once():
 
         last_sample_ts = time.time()
         while True:
+            time.sleep(1)
             raw = await asyncio.wait_for(ws.recv(), timeout=30)
             msg = json.loads(raw)
             if msg.get("event") in ("subscribe", "cancel", "error"):
@@ -177,8 +171,18 @@ async def _collect_books_once():
                 row["obpi"]    = round((sum_b - sum_a)/(sum_b + sum_a) if (sum_b+sum_a) else 0,4)
                 client_book.append_df_ignore(pd.DataFrame([row]))
 
+                print(f'obpi={row["obpi"]}')
                 # 清空已处理成交
                 trades.clear()
+
+                now = time.time()
+                if now - last_ts >= WINDOW:
+                    bid_rate = bid_eaten / WINDOW
+                    ask_rate = ask_eaten / WINDOW
+                    print(f"[{WINDOW}s] bid_eat_rate={bid_rate:.4f}, ask_eat_rate={ask_rate:.4f} is_bid_eat_stronger={bid_rate > ask_rate}")
+                    bid_eaten = ask_eaten = 0.0
+                    last_ts = now
+
                 continue
             if msg.get("arg", {}).get("channel") == "books":
                 rec    = msg["data"][0]

@@ -37,7 +37,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 400 + LIMIT_K_N_APPEND # + 700
+LIMIT_K_N = 400 + LIMIT_K_N_APPEND  #+ 5700
 
 
 def read_and_sort_df(is_append=True):
@@ -81,10 +81,10 @@ def update_graph(n):
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
         df = read_and_sort_df(is_append=False)
         before = time.time()
-        multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
+        multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
         print("calc vwap takes time:", time.time() - before)
-        # 截断到第一个有效 SFrame_vp_poc
-        start = multiVwap.SFrame_vp_poc.first_valid_index()
+        # 截断到第一个有效 SFrame_vwap_poc
+        start = multiVwap.SFrame_vwap_poc.first_valid_index()
         if start is None:
             return go.Figure(), "暂无有效数据"
         df = df.loc[start:].copy()
@@ -109,14 +109,14 @@ def update_graph(n):
         ), row=1, col=1)
         # 所有 vp/VWAP/STD 系列
         for name, color in {
-            # **{k:'firebrick' for k in ["LFrame_vp_poc"]},
-            **{k:'purple'    for k in ["SFrame_vp_poc"]},
-            **{k:'magenta'    for k in ["HFrame_vp_poc"]},
+            # **{k:'firebrick' for k in ["LFrame_vwap_poc"]},
+            **{k:'purple'    for k in ["SFrame_vwap_poc"]},
+            **{k:'magenta'    for k in ["HFrame_vwap_poc"]},
             **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
-            # **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
+            **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             
-            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            # **{k:'black'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
+            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'black'   for k in ["HFrame_vwap_up_getin","HFrame_vwap_down_getin"]},
             **{k:'blue'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
             **{k:'darkslategray'   for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
             
@@ -274,7 +274,7 @@ def update_graph(n):
 if __name__ == '__main__':
     df = read_and_sort_df(is_append=False)
     
-    multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
+    multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
 
 
     app.run(debug=True, port=8050 if   use30x else 8051)

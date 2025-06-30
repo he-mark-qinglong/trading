@@ -109,11 +109,12 @@ class MultiFramePOCStrategy:
     def __init__(self,
                  long_rule: EntryRule,
                  short_rule: EntryRule,
-                 timeout: float = 60.0):
+                 timeout: float = 60.0,
+                 max_open2equity_pct=0.4):
         self.long_rule   = long_rule
         self.short_rule  = short_rule
         self.timeout     = timeout
-
+        self.max_open2equity_pct = max_open2equity_pct
         # 哪些 tier 已挂过，防止重复
         self._opened: dict[str, Set[str]] = {
             "long": set(), "short": set()
@@ -142,7 +143,7 @@ class MultiFramePOCStrategy:
         if self._has_order[side]:
             # 外部会继续调用 should_cancel 判断是否超时
             return None
-        if open2equity_pct >= 0.2:
+        if open2equity_pct >= self.max_open2equity_pct:
             return None  #最多开20倍杠杆下的20%仓位订单---也就是20x0.2=4倍最大页面杠杆率可以承受后续25%的单边波幅，以免爆仓。
         
         rule   = self.long_rule if side == "long" else self.short_rule

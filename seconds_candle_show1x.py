@@ -60,8 +60,8 @@ def read_and_sort_df(is_append=True):
     return df
 # 颜色映射 & 要画的属性列表（包含 SFrame 和 HFrame 的所有线）
 colors = {
-    'LFrame_vp_poc':     'firebrick',
-    'SFrame_vp_poc':            'purple',
+    'LFrame_vwap_poc':     'firebrick',
+    'SFrame_vwap_poc':            'purple',
 
     'SFrame_vwap_up_poc':          'blue',
     # 'SFrame_vwap_up_getin':    'yellow',
@@ -90,10 +90,10 @@ def update_graph(n):
     try:
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
         df = read_and_sort_df(is_append=False)
-        multiVwap.calculate_SFrame_vp_poc_and_std(df, DEBUG)
+        multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
 
-        # 截断到第一个有效 SFrame_vp_poc
-        start = multiVwap.SFrame_vp_poc.first_valid_index()
+        # 截断到第一个有效 SFrame_vwap_poc
+        start = multiVwap.SFrame_vwap_poc.first_valid_index()
         if start is None:
             return go.Figure(), "暂无有效数据"
         df = df.loc[start:].copy()
@@ -118,9 +118,9 @@ def update_graph(n):
         ), row=1, col=1)
         # 所有 vp/VWAP/STD 系列
         for name, color in {
-            **{k:'firebrick' for k in ["LFrame_vp_poc"]},
-            **{k:'purple'    for k in ["SFrame_vp_poc"]},
-            **{k:'magenta'    for k in ["HFrame_vp_poc"]},
+            **{k:'firebrick' for k in ["LFrame_vwap_poc"]},
+            **{k:'purple'    for k in ["SFrame_vwap_poc"]},
+            **{k:'magenta'    for k in ["HFrame_vwap_poc"]},
             **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             **{k:'deeppink'   for k in ["HFrame_vwap_up_getin","HFrame_vwap_down_getin"]},
             
@@ -283,5 +283,5 @@ def on_close(n, disabled):
 if __name__ == "__main__":
     # 预热计算一次
     df0 = read_and_sort_df(is_append=False)
-    multiVwap.calculate_SFrame_vp_poc_and_std(df0, DEBUG)
+    multiVwap.calculate_SFrame_vwap_poc_and_std(df0, DEBUG)
     app.run(debug=True, port=8051 if use1x else 8050)
