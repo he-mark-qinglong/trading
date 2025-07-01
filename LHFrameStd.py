@@ -30,7 +30,7 @@ class MultiTFvp_poc:
         self.window_SFrame       = window_SFrame
         self.std_window_LFrame   = std_window_LFrame
         self.rma_smooth_window   = std_window_LFrame
-        self.rma_smooth_window_s   = std_window_LFrame 
+        self.rma_smooth_window_s   = std_window_LFrame * 2
         
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         
@@ -363,7 +363,6 @@ class MultiTFvp_poc:
         )
         
         return df #df[['datetime', 'amom','amoms','hl','hlc']].reindex(self.df.index)
-
 
 def rsi_with_ema_smoothing(coin_date_df, length=13):  
     close = coin_date_df.iloc[:, 4]  

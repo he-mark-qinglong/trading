@@ -100,7 +100,7 @@ class trade_coin(object):
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
         self.strategy = MultiFramePOCStrategy(long_rule=RuleConfig.long_rule, 
                                               short_rule=RuleConfig.short_rule, 
-                                              timeout=30,
+                                              timeout=150,
                                               max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
         self.strategy_log_interval = 0
 
@@ -227,8 +227,8 @@ class trade_coin(object):
                     sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
                     record = self.strategy.eval_history[-1]
                     print(record['side'])
-
-                    print(record['tiers'][0])
+                    if record['tiers']:
+                        print(record['tiers'][0])
                     if self.strategy_log_interval % 20 == 0:
                         with builtins.open("eval_logs.json","w") as f:
                             import json
@@ -258,7 +258,7 @@ class trade_coin(object):
 
 
                 atr_1x =  self.multiFrameVwap.atr.iloc[-1]
-                if 0:
+                if 1:
                     if self.direction == -2:
                         negative_atr = atr_1x
                         positive_atr = 0
@@ -305,7 +305,10 @@ class trade_coin(object):
                         if amount_long == 0 and 1 :
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
-                            price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(20).max()) #if is_short_un_opend else cur_high  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            if amount_short == 0:
+                                price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(20).max()) 
+                            else:  #一开仓按照最新的最低价挂单，因为之前触及后，sl会移动，导致后续虽然成本更差，但是不一定还能触及sl等价格。
+                                price0=min(sig_short.price, self.coin_data['high'].tail(20).max())
                             price = price0
                             fv=self.fv[self.symbol]
                             amount=sig_short.amount  #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_short))
@@ -330,7 +333,10 @@ class trade_coin(object):
                         if 1 and amount_short == 0:
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
-                            price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(20).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            if amount_long == 0:
+                                price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(20).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                            else:
+                                price0=min(sig_long.price, self.coin_data['low'].tail(20).min()) 
                             price=price0
                             fv=self.fv[self.symbol]
                             amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
@@ -354,7 +360,7 @@ class trade_coin(object):
                     # if len(lever_dic) > 0:
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
-                    force_exit_profit = 0.013  #机构的一半强制止盈要求（伦敦、纽约，因为它的4倍是5%、波动亏损5%人是比较无感的。）
+                    force_exit_profit = 0.02  #机构的一半强制止盈要求（伦敦、纽约，因为它的4倍是5%、波动亏损5%人是比较无感的。）
                     exit_required_profit=max(fee_require_profit,atr_1x/cur_close * 2)  
                     
                     ChineseTradeTime = False
@@ -390,7 +396,7 @@ class trade_coin(object):
                             # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
                             consecutive_belowsl = (self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-3:].to_numpy() > close.iloc[-3:].to_numpy()).sum() >= 2
                             # 2) 中心线止盈
-                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4 and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] < self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4  # and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] < self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
                             cross_center_and_tp = consecutive_cross_center \
                                                 and short_profit > exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['sma_scaled'].iloc[-1]
                             # 3) 下轨止盈
@@ -445,7 +451,7 @@ class trade_coin(object):
                             # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
                             consecutive_upponsl = (self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
                             # 2) 中心线止盈：收盘在中心线上方，且利润达 exit_required_profit
-                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4 and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] > self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4 #and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] > self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
                             cross_center_and_tp = consecutive_cross_center and (long_profit > exit_required_profit)
                             # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
                             cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \
@@ -469,6 +475,8 @@ class trade_coin(object):
                                 # ③ SFrame 上轨止盈 → 最多平 2
                                 close_amount = min(2, amount_long)
                                 price0       = cur_SFrame_vwap_up_poc
+
+                            #oi为多头的时候，多头可以拿远一点。  有消息面的时候，以中轨为止盈，避免趋势出来无法反转到上方去止盈。
                             elif cross_center_and_tp:
                                 # ② 中心止盈 → 平 1
                                 close_amount = 1 #amount_long
@@ -737,6 +745,8 @@ class trade_coin(object):
         return results
     
     def create_order1(self,symbol,price,amount,model,tag="520ccb3f7df2SUDE"):#bef23d76c2f8SUDE model:buylong ,buyshort ,selllong ,sellshort ,buycash ,sellcash
+        self.create_order_with_stop_loss(symbol, price, amount, model, tag, stop_loss_pct=1)
+        return
         if model=='buylong':
             place_order=self.tradeAPI.place_order(symbol,'cross','buy','limit',str(int(float(amount))),'','',tag,'long',str(price),'')
         elif model=='buyshort':
@@ -751,6 +761,38 @@ class trade_coin(object):
             place_order=self.tradeAPI.place_order(symbol,'cross','sell','limit',str(amount),'','',tag,'',str(price),'')
         return place_order
     
+    def create_order_with_stop_loss(self, symbol, price, amount, model, tag="520ccb3f7df2SUDE", stop_loss_pct=0.01):
+        # 计算止损价格
+        if model == 'buylong':
+            stop_loss_price = price * (1 - stop_loss_pct)  # 买入时止损价格
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'buy', 'limit', str(int(float(amount))), '', '', tag, 'long', str(price), '')
+            self.tradeAPI.place_algo_order(symbol, 'cross', 'sell', 'conditional', str(int(float(amount))), '', 'long', '', str(stop_loss_price), str(stop_loss_price))
+        
+        elif model == 'buyshort':
+            stop_loss_price = price * (1 + stop_loss_pct)  # 卖出短仓时止损价格
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'sell', 'limit', str(int(float(amount))), '', '', tag, 'short', str(price), '')
+            self.tradeAPI.place_algo_order(symbol, 'cross', 'buy', 'conditional', str(int(float(amount))), '', 'short', '', str(stop_loss_price), str(stop_loss_price))
+        
+        elif model == 'selllong':
+            stop_loss_price = price * (1 + stop_loss_pct)  # 平仓时止损价格
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'sell', 'limit', str(int(float(amount))), '', '', tag, 'long', str(price), '')
+            self.tradeAPI.place_algo_order(symbol, 'cross', 'buy', 'conditional', str(int(float(amount))), '', 'long', '', str(stop_loss_price), str(stop_loss_price))
+        
+        elif model == 'sellshort':
+            stop_loss_price = price * (1 - stop_loss_pct)  # 平仓时止损价格
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'buy', 'limit', str(int(float(amount))), '', '', tag, 'short', str(price), '')
+            self.tradeAPI.place_algo_order(symbol, 'cross', 'sell', 'conditional', str(int(float(amount))), '', 'short', '', str(stop_loss_price), str(stop_loss_price))
+        
+        elif model == 'buycash':
+            # 现金买入时不设置止损
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'buy', 'limit', str(amount), '', '', tag, '', str(price), '')
+        
+        elif model == 'sellcash':
+            # 现金卖出时不设置止损
+            place_order = self.tradeAPI.place_order(symbol, 'cross', 'sell', 'limit', str(amount), '', '', tag, '', str(price), '')
+
+        return place_order
+
     def get_face_value(self,symbol):
         try:
             face=self.publicAPI.get_instruments('SWAP')

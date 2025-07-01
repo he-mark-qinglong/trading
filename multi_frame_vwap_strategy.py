@@ -133,16 +133,12 @@ class BarsAwayFromThresholdCondition:
 class VolumeSpikeCondition:
     df_attr: str     # data_src 上 DataFrame 属性名, e.g. "df"
     vol_key: str     # 列名, e.g. "vol"
-    window: int      # lookback length
-    mult: float      # std multiplier
 
     def check(self, close_series, data_src, cur_close: float) -> bool:
         df: pd.DataFrame = getattr(data_src, self.df_attr)
-        arr = df[self.vol_key].iloc[-self.window:].to_numpy().astype(float)
-        if arr.size < self.window:
-            return False
-        is_uppon_std = arr[-1] > arr.mean() + self.mult * arr.std(ddof=0)
-        return is_uppon_std
+
+        vol_need_to_surpass = df[self.vol_key].iloc[-1]
+        return df['vol'].iloc[-1] > vol_need_to_surpass
 
 # —— 6) 单根大振幅 Bar 过滤 —— 
 @dataclass
@@ -433,7 +429,7 @@ class RuleConfig:
         #     amount=1,
         #     conds=[
         #         AndCondition([
-        #             VolumeSpikeCondition("df", "vol", window=80, mult=2.0),
+        #             VolumeSpikeCondition("vol_df", "lower"),
         #             OrCondition([
         #                 #单根从SFrame_vwap_down_poc之下，暴跌 3 x atr
         #                 BarSpikeCondition(
@@ -459,7 +455,7 @@ class RuleConfig:
             conds=[
                 OrCondition([
                     AndCondition([
-                        # VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                        VolumeSpikeCondition("vol_df", "upper"),
                         ConsecutiveCondition("HFrame_vwap_poc", "below", 4),
                         ConsecutiveCondition("SFrame_vwap_poc", "below", 10),
                         #价格已经连续 30 根 K 线在 SFrame_vwap_up_getin 之下,以避免短期极强的动能冲击，太早介入可能浮亏比较大。
@@ -467,11 +463,11 @@ class RuleConfig:
                     ]),
                     AndCondition([
                         ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 4),
-                        VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                        VolumeSpikeCondition("vol_df", "lower"),
                     ])
                 ])
             ],
-            limit_price_attr="SFrame_vwap_down_getin"
+            limit_price_attr="HFrame_vwap_down_sl2"
         ),
 
     ])
@@ -482,7 +478,7 @@ class RuleConfig:
     #         amount=1,
     #         conds=[
     #             AndCondition([
-    #                 VolumeSpikeCondition("df", "vol", window=80, mult=2.0),
+    #                 VolumeSpikeCondition("vol_df", "lower"),
     #                 OrCondition([  
     #                     #单根暴涨x倍 atr
     #                     BarSpikeCondition(
@@ -507,7 +503,7 @@ class RuleConfig:
             conds=[
                 OrCondition([
                     AndCondition([
-                    #     # VolumeSpikeCondition("df", "vol", window=80, mult=1),
+                        VolumeSpikeCondition("vol_df", "upper"),
                         ConsecutiveCondition("SFrame_vwap_poc", "above", 2),
                         ConsecutiveCondition("HFrame_vwap_poc", "above", 10),
                     #     # #价格已经连续 30 根 K 线在 SFrame_vwap_down_getin 之上，以避免短期极强的动能冲击，太早介入可能浮亏比较大。
@@ -516,11 +512,11 @@ class RuleConfig:
                     ]),
                     AndCondition([
                         ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 4),
-                        VolumeSpikeCondition("df", "vol", window=80, mult=2),
+                        VolumeSpikeCondition("vol_df", "lower"),
                     ])
                 ])
             ],
-            limit_price_attr="SFrame_vwap_up_getin"
+            limit_price_attr="HFrame_vwap_up_sl2"
         ),
 
 
