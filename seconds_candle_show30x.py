@@ -37,7 +37,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 400 + LIMIT_K_N_APPEND  #+ 700
+LIMIT_K_N = 400 + LIMIT_K_N_APPEND  + 1700
 
 
 def read_and_sort_df(is_append=True):

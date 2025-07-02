@@ -257,7 +257,7 @@ class trade_coin(object):
                         self.cancel_order()
 
 
-                atr_1x =  self.multiFrameVwap.atr.iloc[-1]
+                atr_1x =  self.multiFrameVwap.atr_dic['ATR'].iloc[-1]
                 if 1:
                     if self.direction == -2:
                         negative_atr = atr_1x
@@ -396,7 +396,7 @@ class trade_coin(object):
                             # 1) 严格止损：最近 3 根 K 线里 >=2 根  cur_HFrame_vwap_down_sl 向下突破，直接全部平
                             consecutive_belowsl = (self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-3:].to_numpy() > close.iloc[-3:].to_numpy()).sum() >= 2
                             # 2) 中心线止盈
-                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4  # and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] < self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()  > close.iloc[-6:].to_numpy() ).sum() >= 4  and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] < self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
                             cross_center_and_tp = consecutive_cross_center \
                                                 and short_profit > exit_required_profit and self.coin_data['vol'].iloc[-1] > self.multiFrameVwap.vol_df['sma_scaled'].iloc[-1]
                             # 3) 下轨止盈
@@ -451,7 +451,7 @@ class trade_coin(object):
                             # 1) 最近 3 根 K 线里 ≥2 根 cur_HFrame_vwap_up_sl 被突破 → 直接全平
                             consecutive_upponsl = (self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-3:].to_numpy()  < close.iloc[-3:].to_numpy() ).sum() >= 2  
                             # 2) 中心线止盈：收盘在中心线上方，且利润达 exit_required_profit
-                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4 #and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] > self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
+                            consecutive_cross_center = (self.multiFrameVwap.SFrame_vwap_poc.iloc[-6:].to_numpy()   < close.iloc[-6:].to_numpy() ).sum() >= 4 and self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] > self.multiFrameVwap.HFrame_vwap_poc.iloc[-1]
                             cross_center_and_tp = consecutive_cross_center and (long_profit > exit_required_profit)
                             # 3) SFrame 上轨止盈：收盘突破 SFrame 上轨，且利润达 fee_require_profit
                             cross_up_and_tp = (cur_close >= cur_SFrame_vwap_up_poc) \

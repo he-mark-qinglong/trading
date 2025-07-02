@@ -109,7 +109,7 @@ class MultiTFvp_poc:
             'hhigh': pd.Series(hhigh_arr,     index=idx),
         }
 
-    def calc_atr(self, period=14, high_col="high", low_col="low", close_col="close"):
+    def calc_atr(self, period=14, high_col="high", low_col="low", close_col="close", std_multiplier=2,):
         """
         计算ATR并返回Series，可自动识别DataFrame列名
         Params:
@@ -131,7 +131,19 @@ class MultiTFvp_poc:
             (low - prev_close).abs()
         ], axis=1).max(axis=1)
         atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-        return atr
+        # 计算ATR的标准差
+        atr_std = atr.rolling(window=period).std()
+
+        # 计算2倍标准差边界
+        upper_bound = atr + (std_multiplier * atr_std)
+        lower_bound = atr - (std_multiplier * atr_std)
+        
+        return {
+            'ATR': atr,
+            'ATR_std': atr_std,
+            'upper_bound': upper_bound,
+            'lower_bound': lower_bound
+        }
 
     def append_df(self, new_df: pd.DataFrame, debug=False):
         """
@@ -262,9 +274,7 @@ class MultiTFvp_poc:
         self.vol_df = self.compute_volume_channels(self.df)
         self.momentum_df = self.anchored_momentum()
 
-        self.atr = self.calc_atr()
-
-        
+        self.atr_dic = self.calc_atr()
 
     # 1) volume核心指标计算
     def compute_volume_channels(self, df: pd.DataFrame, 

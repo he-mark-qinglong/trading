@@ -137,8 +137,10 @@ class VolumeSpikeCondition:
     def check(self, close_series, data_src, cur_close: float) -> bool:
         df: pd.DataFrame = getattr(data_src, self.df_attr)
 
-        vol_need_to_surpass = df[self.vol_key].iloc[-1]
-        return df['vol'].iloc[-1] > vol_need_to_surpass
+        vol_normal = df['vol'].iloc[-3:] 
+        vol_higher = df[self.vol_key].iloc[-3:]
+        vol_higher_accum = sum(vol_normal - vol_higher)
+        return vol_higher_accum > 2
 
 # —— 6) 单根大振幅 Bar 过滤 —— 
 @dataclass
@@ -455,7 +457,7 @@ class RuleConfig:
             conds=[
                 OrCondition([
                     AndCondition([
-                        VolumeSpikeCondition("vol_df", "upper"),
+                        # VolumeSpikeCondition("vol_df", "lower"),
                         ConsecutiveCondition("HFrame_vwap_poc", "below", 4),
                         ConsecutiveCondition("SFrame_vwap_poc", "below", 10),
                         #价格已经连续 30 根 K 线在 SFrame_vwap_up_getin 之下,以避免短期极强的动能冲击，太早介入可能浮亏比较大。
@@ -503,7 +505,7 @@ class RuleConfig:
             conds=[
                 OrCondition([
                     AndCondition([
-                        VolumeSpikeCondition("vol_df", "upper"),
+                        # VolumeSpikeCondition("vol_df", "lower"),
                         ConsecutiveCondition("SFrame_vwap_poc", "above", 2),
                         ConsecutiveCondition("HFrame_vwap_poc", "above", 10),
                     #     # #价格已经连续 30 根 K 线在 SFrame_vwap_down_getin 之上，以避免短期极强的动能冲击，太早介入可能浮亏比较大。
