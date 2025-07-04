@@ -29,6 +29,7 @@ import builtins
 
 
 from db_client import SQLiteWALClient
+from db_read import read_and_sort_df
 # from strategy import MultiFramePOCStrategy, RuleConfig
 from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig
 
@@ -44,7 +45,9 @@ from LHFrameStd import MultiTFvp_poc, WindowConfig
 from plot_mtf import  plot_all_multiftfpoc_vars, plot_liquidation_vp
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 400 + LIMIT_K_N_APPEND #+ 1000
+LIMIT_K_N = 4000 + LIMIT_K_N_APPEND 
+LIMIT_K_N += 2600
+
 DEBUG = False 
 DEBUG = True
     
@@ -100,7 +103,7 @@ class trade_coin(object):
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
         self.strategy = MultiFramePOCStrategy(long_rule=RuleConfig.long_rule, 
                                               short_rule=RuleConfig.short_rule, 
-                                              timeout=150,
+                                              timeout=150 * 3,
                                               max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
         self.strategy_log_interval = 0
 
@@ -132,28 +135,83 @@ class trade_coin(object):
         print(asks)
         print(bids)
 
-    def get_liquidation(self):
+    # def get_liquidation(self):
+    #     # 按最后一个 '-' 拆分
+    #     inst_family = self.symbol.rsplit("-", 1)[0]
+    #     # inst_family 现在就是 "ETH-USDT"
+    #     liquidation_orders = self.publicAPI.get_liquidation_orders('SWAP', instId=self.symbol, uly=inst_family, state='filled')
+    #     liquidation_details = liquidation_orders['data'][0]['details']
+    #     long_px_sz_accum = 0
+    #     long_sz_accum = 0
+
+    #     short_px_sz_accum = 0
+    #     short_sz_accum = 0
+
+    #     for item in liquidation_details:
+    #         px, sz = float(item['bkPx']), float(item['sz'])
+    #         if 'long' == item['posSide']:
+    #             long_px_sz_accum += px * sz
+    #             long_sz_accum += sz
+    #         else:
+    #             short_px_sz_accum += px * sz
+    #             short_sz_accum += sz
+    #     liquidation_long_vwap = long_px_sz_accum / long_sz_accum
+    #     liquidation_short_vwap = short_px_sz_accum / short_sz_accum
+    #     print(f'liquidation_long_vwap = {liquidation_long_vwap}, liquidation_short_vwap = {liquidation_short_vwap}')
+        
+    #     plot_liquidation_vp(liquidation_details=liquidation_details)
+
+    def get_liquidation(self, start_date, end_date):
         # 按最后一个 '-' 拆分
         inst_family = self.symbol.rsplit("-", 1)[0]
-        # inst_family 现在就是 "ETH-USDT"
-        liquidation_orders = self.publicAPI.get_liquidation_orders('SWAP', instId=self.symbol, uly=inst_family, state='filled')
-        liquidation_details = liquidation_orders['data'][0]['details']
+
+        # 转换时间为时间戳
+        start_timestamp = int(start_date.timestamp() * 1000)
+        end_timestamp = int(end_date.timestamp() * 1000)
+
+        liquidation_details = []
+        current_timestamp = end_timestamp  # 从结束时间开始获取数据
+
+        while current_timestamp > start_timestamp:
+            # 获取清算订单 (API 假设支持按时间过滤)
+            liquidation_orders = self.publicAPI.get_liquidation_orders(
+                'SWAP',
+                instId=self.symbol,
+                uly=inst_family,
+                state='filled',
+                # before=start_timestamp,  # API 支持起始时间
+                after=current_timestamp      # API 支持结束时间
+            )
+            
+            if not liquidation_orders['data']:
+                break  # 如果没有更多数据则退出循环
+            
+            # 获取当前批次的数据
+            details = liquidation_orders['data'][0]['details']
+            # 将当前批次的数据添加到 liquidation_details 中
+            liquidation_details.extend(details)
+
+            # 更新 current_timestamp 为最近一次获取的数据的开始时间
+            current_timestamp = int(details[-1]['ts']) - 1  # 防止获取重复数据
+            time.sleep(1)  # 适当的延时以避免过载 API
+
         long_px_sz_accum = 0
         long_sz_accum = 0
-
         short_px_sz_accum = 0
         short_sz_accum = 0
 
         for item in liquidation_details:
             px, sz = float(item['bkPx']), float(item['sz'])
-            if 'long' == item['posSide']:
+            if item['posSide'] == 'long':
                 long_px_sz_accum += px * sz
                 long_sz_accum += sz
             else:
                 short_px_sz_accum += px * sz
                 short_sz_accum += sz
-        liquidation_long_vwap = long_px_sz_accum / long_sz_accum
-        liquidation_short_vwap = short_px_sz_accum / short_sz_accum
+                
+        liquidation_long_vwap = long_px_sz_accum / long_sz_accum if long_sz_accum > 0 else 0
+        liquidation_short_vwap = short_px_sz_accum / short_sz_accum if short_sz_accum > 0 else 0
+
         print(f'liquidation_long_vwap = {liquidation_long_vwap}, liquidation_short_vwap = {liquidation_short_vwap}')
         
         plot_liquidation_vp(liquidation_details=liquidation_details)
@@ -165,9 +223,9 @@ class trade_coin(object):
                 self.direction = self.mv_direction()
 
             self.get_open_interest()
-
-            self.usdt_total=self.get_usdt_total()
-            if time.time()-self.asset_time>60:
+            
+            if time.time()-self.asset_time>604:
+                self.usdt_total=self.get_usdt_total()
                 self.asset_time=time.time()
                 self.asset_record.append(self.usdt_total)
                 self.upl_open_condition()
@@ -246,8 +304,16 @@ class trade_coin(object):
                 cur_HFrame_vwap_down_sl = self.multiFrameVwap.HFrame_vwap_down_sl.iloc[-1]
                 cur_HFrame_vwap_up_sl = self.multiFrameVwap.HFrame_vwap_up_sl.iloc[-1]
 
-                if cur_close < cur_SFrame_vwap_down_poc or cur_close > cur_SFrame_vwap_up_poc:
-                    self.get_liquidation()
+                if True or cur_close < cur_SFrame_vwap_down_poc or cur_close > cur_SFrame_vwap_up_poc:
+                    # self.get_liquidation()
+
+                    # 设置查询的时间范围
+                    # 假设您要查询过去一个月的清算数据
+                    end_date = datetime.datetime.now()
+                    start_date = end_date - datetime.timedelta(days=5)
+
+                    # 调用 get_liquidation 方法
+                    self.get_liquidation(start_date, end_date)
                 if sig_long != None or sig_short != None:
                     print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, \n\t sig_long=={sig_long\
                             },\nself.upl_short_open=={self.upl_short_open==1}, \n\tsig_short=={sig_short}, ',
@@ -298,7 +364,8 @@ class trade_coin(object):
                     upl_long=0
                     amount_long=0
                     notionalUsd_long=0
-                    
+
+                newest_kline = self.get_5s_kline()
                 if self.asset_normal==1 and self.upl_short_open==1 and sig_short != None and sig_short.action:
                     #开空
                     try:  
@@ -306,16 +373,18 @@ class trade_coin(object):
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
                             if amount_short == 0:
-                                price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(20).max()) 
+                                price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(50).max())
+                                # price0 = max(price0, newest_kline['close'].max()) 
                             else:  #一开仓按照最新的最低价挂单，因为之前触及后，sl会移动，导致后续虽然成本更差，但是不一定还能触及sl等价格。
-                                price0=min(sig_short.price, self.coin_data['high'].tail(20).max())
+                                price0=max(sig_short.price, self.coin_data['high'].tail(50).max())
+                                # price0 = max(price0, newest_kline['close'].max()) 
                             price = price0
                             fv=self.fv[self.symbol]
                             amount=sig_short.amount  #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_short))
                             
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model) 
-                            print(place_order,symbol,model)
+                            print('已经下空单:', place_order,symbol,model)
                             try:
                                 # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
                                 logging.info((self.user,symbol,'sig_short.price',sig_short.price,'price0',price0,time11,model))
@@ -334,9 +403,9 @@ class trade_coin(object):
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
                             if amount_long == 0:
-                                price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(20).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                                price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(50).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
                             else:
-                                price0=min(sig_long.price, self.coin_data['low'].tail(20).min()) 
+                                price0=min(sig_long.price, self.coin_data['low'].tail(50).min()) 
                             price=price0
                             fv=self.fv[self.symbol]
                             amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
@@ -347,7 +416,7 @@ class trade_coin(object):
                                 logging.info((self.user,symbol,'sig_long.price',sig_long.price,'price0',price0,time11,model))
                             except:
                                 pass
-                            print('place_order:', place_order,symbol,model)
+                            print('已经下多单::', place_order,symbol,model)
                            
 
                     except Exception as e:
@@ -382,6 +451,7 @@ class trade_coin(object):
                                 plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
 
                         short_profit = upl_short / notionalUsd_short
+                        #利润回撤一半避免盈利变为亏损，平仓。
                         # if short_profit <= self.max_history_short_profit / 2 and self.max_history_short_profit > 0.004:
                         #     close_short(amount_short, cur_close, instantly=True)
                         #     if self.no_holdin_orders("short"):
@@ -530,12 +600,12 @@ class trade_coin(object):
 
     def upl_open_condition(self):
         notionalUsd_dict, markprice_dict , positionAmount_dict_sub, upl_dict,upl_long_dict,upl_short_dict=self.get_entryprice_okx()
-        if (sum(upl_long_dict.values())/self.usdt_total<-0.002 and sum(upl_long_dict.values())<sum(upl_short_dict.values())) :
+        if (sum(upl_long_dict.values())/self.usdt_total<-0.03 and sum(upl_long_dict.values())<sum(upl_short_dict.values())) :
             self.upl_long_open=0
         else:
             self.upl_long_open=1
 
-        if sum(upl_short_dict.values())/self.usdt_total<-0.002 and sum(upl_short_dict.values())<sum(upl_long_dict.values()):
+        if sum(upl_short_dict.values())/self.usdt_total<-0.03 and sum(upl_short_dict.values())<sum(upl_long_dict.values()):
             self.upl_short_open=0
         else:
             self.upl_short_open=1  
@@ -662,8 +732,24 @@ class trade_coin(object):
 
         # 1. 从 SQLite 读最新 2000 条
         try:
+            df = read_and_sort_df(self.client, LIMIT_K_N)
+        except Exception as e:
+            print(f"读取数据库错误：{e}", '&&&'*10)
+            return None
+
+        return df
+    
+    def get_5s_kline(self):
+        """
+        init: 是否首次抓取
+        self.coin_data: 历史拼接过的数据
+        self.last_timestamp: 记录最后K线的时间戳
+        """
+
+        # 1. 从 SQLite 读最新 2000 条
+        try:
             # 先拿最新 2000 条（倒序）
-            df = self.client.read_df(limit=LIMIT_K_N if init else LIMIT_K_N_APPEND, order_by="ts DESC")
+            df = self.client.read_df(limit=30, order_by="ts DESC")
             df["ts"] = df["ts"].astype(int)
             df = df.drop_duplicates("ts").sort_values("ts")
             df["datetime"] = pd.to_datetime(df["ts"], unit="s")

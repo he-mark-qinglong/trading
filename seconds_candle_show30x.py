@@ -14,7 +14,7 @@ import LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
-
+from db_read import read_and_sort_df
 
 
 BASIC_INTERVAL = 5
@@ -25,7 +25,7 @@ DEBUG= True
 DEBUG = False
 
 DB_PATH = f'{symbol}.db'
-client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x" if   use30x else "ohlcv")
+client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
 # client = SQLiteWALClient(db_path=DB_PATH, table="binance_30x")
 # client = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_30x")
 trade_client = None
@@ -37,25 +37,10 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 400 + LIMIT_K_N_APPEND  + 1700
+LIMIT_K_N = 4000 + LIMIT_K_N_APPEND 
+LIMIT_K_N += 2600
 
-
-def read_and_sort_df(is_append=True):
-    df = client.read_df(limit=LIMIT_K_N_APPEND if is_append else LIMIT_K_N, order_by="ts DESC")
-    #print('df.head:', df.head)
-    # 2. 检查必须列
-    required = {"ts","open","high","low","close","vol"}
-    if not required.issubset(df.columns):
-        miss = required - set(df.columns)
-    # 3. 转换时间
-    df["ts"] = df["ts"].astype(int)
-    df = df.drop_duplicates("ts").sort_values("ts")
-    df["datetime"] =  pd.to_datetime(df["ts"], unit="s")
-    df = df.set_index("ts", drop=True)
-
-    # 6) 保证数据是连续、升序的
-    df = df.sort_index()
-    return df
+import pandas as pd
 
 app = Dash(__name__)
 app.layout = html.Div([
@@ -79,7 +64,7 @@ app.layout = html.Div([
 def update_graph(n):
     try:
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
-        df = read_and_sort_df(is_append=False)
+        df = read_and_sort_df(client, LIMIT_K_N)
         before = time.time()
         multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
         print("calc vwap takes time:", time.time() - before)
@@ -272,9 +257,4 @@ def update_graph(n):
 #     return status, True
 
 if __name__ == '__main__':
-    df = read_and_sort_df(is_append=False)
-    
-    multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
-
-
     app.run(debug=True, port=8050 if   use30x else 8051)

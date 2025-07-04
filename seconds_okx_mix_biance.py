@@ -17,14 +17,16 @@ OKX_WS          = "wss://ws.okx.com:8443/ws/v5/public"
 BINANCE_WS      = f"wss://fstream.binance.com/ws/{SYMBOL_BINANCE}@aggTrade"
 MAX_ROWS        = 100_000
 
-
+client1x   = SQLiteWALClient(db_path=DB_PATH, table="ohlcv_1x")
 okx_30x_cli      = SQLiteWALClient(DB_PATH, table="ohlcv_30x")
 binance_30x_cli  = SQLiteWALClient(DB_PATH, table="binance_30x")
 cmb_1x_cli      = SQLiteWALClient(DB_PATH, table="combined_1x")
 cmb_30x_cli      = SQLiteWALClient(DB_PATH, table="combined_30x")
 # drop_orderbook_snap(DB_PATH, "combined_30x")
+
 async def collect_okx(queue: asyncio.Queue):
     """订阅 OKX trades，产出 1×、30× K 线，推到 queue"""
+    cache_30x, cache_1x = [], []  # 分别缓存 30x 和 1x K 线数据
     while True:
         try:
             async with websockets.connect(OKX_WS, ping_interval=20, ping_timeout=20) as ws:
@@ -32,8 +34,7 @@ async def collect_okx(queue: asyncio.Queue):
                     "op": "subscribe",
                     "args": [{"channel": "trades", "instId": SYMBOL_OKX}]
                 }))
-                cache, agg_buf = [], []
-                ts0 = int(time.time())
+                ts0_30x, ts0_1x = int(time.time()), int(time.time())  # 记录时间戳
                 while True:
                     try:
                         msg = await asyncio.wait_for(ws.recv(), timeout=30)
@@ -44,23 +45,40 @@ async def collect_okx(queue: asyncio.Queue):
                     data = json.loads(msg)
                     if data.get("arg", {}).get("channel") == "trades" and "data" in data:
                         for t in data["data"]:
-                            s = int(int(t["ts"])//1000)
-                            cache.append({"ts":s, "price":float(t["px"]), "vol":float(t["sz"])})
+                            s = int(int(t["ts"]) // 1000)
+                            cache_30x.append({"ts": s, "price": float(t["px"]), "vol": float(t["sz"])})
+                            cache_1x.append({"ts": s, "price": float(t["px"]), "vol": float(t["sz"])})
+
+                    # 达到 30x interval 则产出 30x K 线
                     now = int(time.time())
-                    if now - ts0 >= INTERVAL and cache:
-                        df   = pd.DataFrame(cache)
-                        o,h,l,c = df.iloc[0].price, df.price.max(), df.price.min(), df.iloc[-1].price
-                        v    = round(df.vol.sum(),2)
-                        row = {"ts":ts0,"open":o,"high":h,"low":l,"close":c,"vol":v}
+                    if now - ts0_30x >= INTERVAL and cache_30x:
+                        df = pd.DataFrame(cache_30x)
+                        o, h, l, c = df.iloc[0].price, df.price.max(), df.price.min(), df.iloc[-1].price
+                        v = round(df.vol.sum(), 2)
+                        row_30x = {"ts": ts0_30x, "open": o, "high": h, "low": l, "close": c, "vol": v}
                         
-                        # 写 OKX 表
-                        okx_30x_cli.append_df_ignore(pd.DataFrame([row]))
-                        # print('okx 30x ', pd.DataFrame([row]))
-                        # 推到队列
-                        await queue.put(("30x", "okx", row))
+                        # 写 OKX 30x 表
+                        okx_30x_cli.append_df_ignore(pd.DataFrame([row_30x]))
+                        await queue.put(("30x", "okx", row_30x))
 
+                        # 清空缓存，更新时间
+                        cache_30x, ts0_30x = [], now
 
-                        cache, ts0 = [], now
+                    # 达到 5s 则产出 1x K 线
+                    if now - ts0_1x >= 5 and cache_1x:
+                        df_1x = pd.DataFrame(cache_1x)
+                        o, h, l, c = df_1x.iloc[0].price, df_1x.price.max(), df_1x.price.min(), df_1x.iloc[-1].price
+                        v = round(df_1x.vol.sum(), 2)
+                        row_1x = {"ts": ts0_1x, "open": o, "high": h, "low": l, "close": c, "vol": v}
+
+                        # 写 OKX 1x 表
+                        write_1x = pd.DataFrame([row_1x])
+                        client1x.append_df_ignore(write_1x)
+                        # print('okx 1x stored:', write_1x)
+
+                        # 清空缓存，更新时间
+                        cache_1x, ts0_1x = [], now
+
         except (websockets.exceptions.ConnectionClosedError,
                 websockets.exceptions.ConnectionClosedOK,
                 asyncio.TimeoutError,
@@ -70,6 +88,7 @@ async def collect_okx(queue: asyncio.Queue):
         except Exception as e:
             print(f"[OKX] 未知异常，重连中：{e!r}")
             await asyncio.sleep(INTERVAL)
+
 
 async def collect_binance(queue: asyncio.Queue):
     """订阅 Binance aggTrade，产出 1×、30× K 线，推到 queue"""

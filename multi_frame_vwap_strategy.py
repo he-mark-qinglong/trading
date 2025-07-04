@@ -453,15 +453,15 @@ class RuleConfig:
 
         EntryTier(
             name="below_down_poc_and_volspike",
-            amount=3,
+            amount=1,
             conds=[
                 OrCondition([
                     AndCondition([
                         # VolumeSpikeCondition("vol_df", "lower"),
-                        ConsecutiveCondition("HFrame_vwap_poc", "below", 4),
-                        ConsecutiveCondition("SFrame_vwap_poc", "below", 10),
+                        ConsecutiveCondition("SFrame_vwap_down_poc", "below", 4),
+                        ConsecutiveCondition("HFrame_vwap_down_poc", "below", 5),
                         #价格已经连续 30 根 K 线在 SFrame_vwap_up_getin 之下,以避免短期极强的动能冲击，太早介入可能浮亏比较大。
-                        BarsAwayFromThresholdCondition("HFrame_vwap_up_poc", "below", 30),
+                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "below", 30),
                     ]),
                     AndCondition([
                         ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 4),
@@ -501,24 +501,24 @@ class RuleConfig:
 
         EntryTier(
             name="uppon_up_sl2_and_volspike",
-            amount=3,
+            amount=1,
             conds=[
                 OrCondition([
                     AndCondition([
                         # VolumeSpikeCondition("vol_df", "lower"),
-                        ConsecutiveCondition("SFrame_vwap_poc", "above", 2),
-                        ConsecutiveCondition("HFrame_vwap_poc", "above", 10),
+                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 2),
+                        ConsecutiveCondition("HFrame_vwap_up_poc", "above", 5),
                     #     # #价格已经连续 30 根 K 线在 SFrame_vwap_down_getin 之上，以避免短期极强的动能冲击，太早介入可能浮亏比较大。
-                        BarsAwayFromThresholdCondition("HFrame_vwap_down_poc", "above", 30),
+                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "above", 30),
                         
                     ]),
                     AndCondition([
-                        ConsecutiveCondition("SFrame_vwap_up_sl2", "above", 4),
+                        ConsecutiveCondition("HFrame_vwap_up_poc", "above", 4),
                         VolumeSpikeCondition("vol_df", "lower"),
                     ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_up_sl2"
+            limit_price_attr="SFrame_vwap_up_getin"
         ),
 
 
