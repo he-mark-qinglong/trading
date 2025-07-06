@@ -30,8 +30,7 @@ import builtins
 
 from db_client import SQLiteWALClient
 from db_read import read_and_sort_df
-# from strategy import MultiFramePOCStrategy, RuleConfig
-from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig
+from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig,  weakLongRuleConfig
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -45,8 +44,9 @@ from LHFrameStd import MultiTFvp_poc, WindowConfig
 from plot_mtf import  plot_all_multiftfpoc_vars, plot_liquidation_vp
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 4000 + LIMIT_K_N_APPEND 
-LIMIT_K_N += 2600
+LIMIT_K_N = 1000 + LIMIT_K_N_APPEND 
+LIMIT_K_N += 3000
+# LIMIT_K_N += 12600
 
 DEBUG = False 
 DEBUG = True
@@ -101,10 +101,16 @@ class trade_coin(object):
         # self.multiFrameVwap.calculate_SFrame_vwap_poc_and_std(self.coin_data, DEBUG)
        
         # 近期的最高或者最低的sl挂单2分钟后撤单为标准.
-        self.strategy = MultiFramePOCStrategy(long_rule=RuleConfig.long_rule, 
-                                              short_rule=RuleConfig.short_rule, 
-                                              timeout=150 * 3,
-                                              max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
+        # self.strategy = MultiFramePOCStrategy(
+        #     long_rule=weakLongRuleConfig.long_rule, 
+        #     short_rule=weakLongRuleConfig.short_rule, 
+        #     timeout=150 * 3,
+        #     max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
+        self.strategy = MultiFramePOCStrategy(
+            long_rule=RuleConfig.long_rule, 
+            short_rule=RuleConfig.short_rule, 
+            timeout=150 * 3,
+            max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
         self.strategy_log_interval = 0
 
         self.max_history_long_profit = 0
@@ -1094,7 +1100,7 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(7)
+                time.sleep(150 * 2)
             for t in threads:
                 t.join()
         except:

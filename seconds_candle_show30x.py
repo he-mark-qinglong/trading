@@ -37,8 +37,9 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 4000 + LIMIT_K_N_APPEND 
-LIMIT_K_N += 2600
+LIMIT_K_N = 1000 + LIMIT_K_N_APPEND 
+LIMIT_K_N += 3000
+# LIMIT_K_N += 12600
 
 import pandas as pd
 
@@ -64,7 +65,10 @@ app.layout = html.Div([
 def update_graph(n):
     try:
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
+        before = time.time()
         df = read_and_sort_df(client, LIMIT_K_N)
+        print("read df and convert takes time:", time.time() - before)
+
         before = time.time()
         multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
         print("calc vwap takes time:", time.time() - before)
@@ -100,9 +104,10 @@ def update_graph(n):
             **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             **{k:'deeppink'   for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             
-            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
             # **{k:'black'   for k in ["HFrame_vwap_up_getin","HFrame_vwap_down_getin"]},
             **{k:'blue'   for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
+            # **{k:'blue'   for k in ["HFrame_vwap_up_sl","HFrame_vwap_down_sl"]},
             **{k:'darkslategray'   for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
             
         }.items():

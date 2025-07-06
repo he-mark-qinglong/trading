@@ -61,3 +61,4 @@ def read_and_sort_df(client, LIMIT_K_N):
     df = df.sort_index()
     # print(df.head(5))
     return resample_to_7_5m(df)
+    return df

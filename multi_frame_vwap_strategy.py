@@ -333,124 +333,12 @@ class MultiFramePOCStrategy:
         self._order_time[side] = None
         self._opened[side].clear()
 
-from dataclasses import dataclass, field
-
-@dataclass
-class SeqStep:
-    """一个“正事件”及其与下一个正事件之间的‘禁止事件’列表。"""
-    positive: Condition
-    forbidden_next: List[Condition] = field(default_factory=list)
-
-@dataclass
-class SequenceWithForbidden(Condition):
-    """
-    在 window 根 K 中，依序触发 steps[i].positive，
-    且在每次 steps[i]→steps[i+1] 的区间里，
-    不能触发 forbidden_next。
-    """
-    steps: List[SeqStep]
-    window: int = 50
-
-    def check(self, close_series: pd.Series, data_src, cur_close: float) -> bool:
-        N = len(close_series)
-        if N < self.window:
-            return False
-        idxs = list(close_series.index[-self.window:])
-        last_pos = -1
-
-        # 对每一步
-        for i, step in enumerate(self.steps):
-            found = False
-            # 在 last_pos+1 ... window-1 里找正事件
-            for off, ts in enumerate(idxs):
-                if off <= last_pos:
-                    continue
-                if step.positive.check(close_series.loc[:ts], data_src, close_series.loc[ts]):
-                    # 找到第 i 步的触发 bar
-                    # 在它与上一步触发 bar 之间，检查 forbidden_next（只针对 i-1→i）
-                    if i>0:
-                        for neg in self.steps[i-1].forbidden_next:
-                            # 扫描上一个触发点 last_pos 到当前 off 之间
-                            for off2 in range(last_pos+1, off):
-                                ts2 = idxs[off2]
-                                if neg.check(close_series.loc[:ts2], data_src, close_series.loc[ts2]):
-                                    return False
-                    last_pos = off
-                    found = True
-                    break
-            if not found:
-                return False
-        return True
-
-    def price(self, close_series: pd.Series, data_src) -> Optional[float]:
-        # 默认以倒数第二个 positive 条件的 price()
-        # 也可以根据业务返回任意一步的 price()
-        step = self.steps[-2]  
-        return step.positive.price(close_series, data_src)
-    
-
-
-
-# 假设已经有 PriceTouchCondition：
-mid_d2u_touch   = PriceTouchCondition("SFrame_vwap_poc",      comparator="above", window=200)
-up_sl_touch = PriceTouchCondition("HFrame_vwap_up_sl",   comparator="above", window=200)
-up_poc_touch = PriceTouchCondition("HFrame_vwap_up_poc", comparator="above", window=200)
-
-mid_u2d_touch   = PriceTouchCondition("SFrame_vwap_poc",      comparator="below", window=200)
-down_sl_touch  = PriceTouchCondition("HFrame_vwap_down_sl", comparator="below", window=200)
-down_poc_touch = PriceTouchCondition("HFrame_vwap_down_poc", comparator="bellow", window=200)
-
-short_touch_up_then_below_center__notouch_down = SequenceWithForbidden(
-    steps=[
-        SeqStep(positive=up_poc_touch, forbidden_next=[]),       # 步骤1: 先触及POC
-
-        SeqStep(positive=mid_d2u_touch,  forbidden_next=[]),         # 步骤2: 回归中轨  
-        # 步骤3: 再触及POC；在“中轨→上轨”间 禁止触及下轨
-        SeqStep(positive=up_poc_touch, forbidden_next=[down_poc_touch]),      
-    ],
-    window=300
-)
-
-long_touch_down_then_uppon_center__notouch_up = SequenceWithForbidden(
-    steps=[
-        SeqStep(positive=down_poc_touch, forbidden_next=[]),       # 步骤1: 先触及POC
-
-        SeqStep(positive=mid_u2d_touch,  forbidden_next=[]),         # 步骤2: 回归中轨
-         # 步骤3: 再触及POC 在“中轨→下轨”间 禁止触及下轨
-        SeqStep(positive=down_poc_touch, forbidden_next=[up_poc_touch]),      
-    ],
-    window=300
-)
+from dataclasses import dataclass
 
 @dataclass
 class RuleConfig:
     # —— 10) 配置示例 —— 
     long_rule = EntryRule([
-        # EntryTier(
-        #     name="or_consec_or_spike",
-        #     amount=1,
-        #     conds=[
-        #         AndCondition([
-        #             VolumeSpikeCondition("vol_df", "lower"),
-        #             OrCondition([
-        #                 #单根从SFrame_vwap_down_poc之下，暴跌 3 x atr
-        #                 BarSpikeCondition(
-        #                     df_attr="df",
-        #                     direction="down",
-        #                     open_thresh="SFrame_vwap_down_poc", open_cmp="below",
-        #                     close_thresh="SFrame_vwap_down_getin", close_cmp="below",
-        #                     atr_attr="atr", mult=3.0
-        #                 ),
-                        
-        #                 short_touch_up_then_below_center__notouch_down,
-        #                 ConsecutiveCondition("SFrame_vwap_down_sl", "below", 4),
-        #                 ConsecutiveCondition("SFrame_vwap_down_poc", "below", 10)
-        #             ])
-        #         ])
-        #     ],
-        #     limit_price_attr="SFrame_vwap_down_sl2"
-        # ),
-
         EntryTier(
             name="below_down_poc_and_volspike",
             amount=1,
@@ -461,7 +349,7 @@ class RuleConfig:
                         ConsecutiveCondition("SFrame_vwap_down_poc", "below", 4),
                         ConsecutiveCondition("HFrame_vwap_down_poc", "below", 5),
                         #价格已经连续 30 根 K 线在 SFrame_vwap_up_getin 之下,以避免短期极强的动能冲击，太早介入可能浮亏比较大。
-                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "below", 30),
+                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "below", 50),
                     ]),
                     AndCondition([
                         ConsecutiveCondition("SFrame_vwap_down_sl2", "above", 4),
@@ -469,35 +357,13 @@ class RuleConfig:
                     ])
                 ])
             ],
-            limit_price_attr="HFrame_vwap_down_sl2"
+            limit_price_attr="SFrame_vwap_down_poc",
+            # limit_price_attr="SFrame_vwap_down_sl2"
         ),
 
     ])
 
     short_rule = EntryRule([
-    #     EntryTier(
-    #         name="or_consec_or_spike_short",
-    #         amount=1,
-    #         conds=[
-    #             AndCondition([
-    #                 VolumeSpikeCondition("vol_df", "lower"),
-    #                 OrCondition([  
-    #                     #单根暴涨x倍 atr
-    #                     BarSpikeCondition(
-    #                         df_attr="df",
-    #                         direction="up",
-    #                         open_thresh="SFrame_vwap_up_poc", open_cmp="below",
-    #                         close_thresh="SFrame_vwap_down_getin", close_cmp="below",
-    #                         atr_attr="atr", mult=3.0
-    #                     ),
-    #                     long_touch_down_then_uppon_center__notouch_up, 
-    #                     ConsecutiveCondition("SFrame_vwap_up_sl", "above", 4),
-    #                     ConsecutiveCondition("SFrame_vwap_up_poc", "above", 10),
-    #                 ])
-    #             ])
-    #         ],
-    #         limit_price_attr="SFrame_vwap_up_poc"
-    #     ),
 
         EntryTier(
             name="uppon_up_sl2_and_volspike",
@@ -509,22 +375,105 @@ class RuleConfig:
                         ConsecutiveCondition("SFrame_vwap_up_poc", "above", 2),
                         ConsecutiveCondition("HFrame_vwap_up_poc", "above", 5),
                     #     # #价格已经连续 30 根 K 线在 SFrame_vwap_down_getin 之上，以避免短期极强的动能冲击，太早介入可能浮亏比较大。
-                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "above", 30),
+                        BarsAwayFromThresholdCondition("SFrame_vwap_poc", "above", 50),
                         
                     ]),
                     AndCondition([
-                        ConsecutiveCondition("HFrame_vwap_up_poc", "above", 4),
+                        ConsecutiveCondition("SFrame_vwap_up_poc", "above", 4),
                         VolumeSpikeCondition("vol_df", "lower"),
                     ])
                 ])
             ],
-            limit_price_attr="SFrame_vwap_up_getin"
+            limit_price_attr="SFrame_vwap_up_sl2",
+            # limit_price_attr="HFrame_vwap_up_poc"
         ),
-
-
     ])
 
 
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+
+@dataclass
+class SimpleTouchCondition:
+    trigger_attr: str      # 存储触发线的数据属性名（上边或下边）
+    history_touched_attr: str  # 存储历史触及线的数据属性名
+    vol_key: str           # 存储成交量的列名
+    direction: str         # 方向，'long' 或 'short'
+
+    def check(self, close_series: pd.Series, data_src, cur_close: float) -> bool:
+        trigger_line = getattr(data_src, self.trigger_attr)
+        history_touched_line = getattr(data_src, self.history_touched_attr)
+
+        # 根据方向找到最近一次触及的历史线
+        last_touch_history_line = None
+        for i in range(-1, -len(history_touched_line), -1):
+            if (self.direction == 'long' and close_series.iloc[i] <= history_touched_line.iloc[i]) or \
+            (self.direction == 'short' and close_series.iloc[i] >= history_touched_line.iloc[i]):
+                last_touch_history_line = i
+                break
+
+        # 如果没有触及过历史线，则返回 False
+        if last_touch_history_line is None:
+            return False
+
+        # 根据 last_touch_history_line 计算负索引范围
+        for j in range(last_touch_history_line, -1, 1):
+            # 直接使用负索引 j
+            if (self.direction == 'long' and close_series.iloc[j] >= trigger_line.iloc[j]) or \
+            (self.direction == 'short' and close_series.iloc[j] <= trigger_line.iloc[j]):
+                # 检查在触及时是否放量
+                vol_df = getattr(data_src, self.vol_key)
+                avg_volume = np.mean(vol_df['lower'].iloc[j])  # 获取触及前5根K线的平均成交量
+                current_volume = vol_df['vol'].iloc[j]
+
+                # 若当前成交量大于过去5根K线的均值，返回 True
+                if current_volume > avg_volume:
+                    return True
+
+        return False  # 如果条件不满足返回 False
+
+    def price(self, close_series: pd.Series, data_src) -> Optional[float]:
+        return max(close_series) if self.direction == 'short' else min(close_series)
+    
+
+@dataclass
+class weakLongRuleConfig:
+    long_rule = EntryRule([
+        EntryTier(
+            name="long_condition",
+            amount=1,
+            conds=[
+                SimpleTouchCondition(
+                    trigger_attr="SFrame_vwap_down_poc",  # 用于做多的触发上边线
+                    history_touched_attr="SFrame_vwap_up_poc",  # 用于做多的历史触及下边线
+                    vol_key="vol_df",
+                    direction='long'  # 指定为做多方向
+                ),
+            ],
+            limit_price_attr=None,  # 限价使用触及的最高价
+        ),
+    ])
+
+    short_rule = EntryRule([
+        EntryTier(
+            name="short_condition",
+            amount=1,
+            conds=[
+                SimpleTouchCondition(
+                    trigger_attr="SFrame_vwap_up_getin",  # 用于做空的触发下边线
+                    history_touched_attr="HFrame_vwap_down_poc",  # 用于做空的历史触及上边线
+                    vol_key="vol_df",
+                    direction='short'  # 指定为做空方向
+                ),
+            ],
+            limit_price_attr=None,  # 限价使用触及的最低价
+        ),
+    ])
+
+
+
+    
 # —— 11) 使用示例 —— 
 # strategy = MultiFramePOCStrategy(long_rule, short_rule, timeout=60)
 # 每根新 Bar 调用:
