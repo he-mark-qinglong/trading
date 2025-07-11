@@ -45,7 +45,7 @@ from plot_mtf import  plot_all_multiftfpoc_vars, plot_liquidation_vp
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 1000 + LIMIT_K_N_APPEND 
-LIMIT_K_N += 3000
+# LIMIT_K_N += 3000
 # LIMIT_K_N += 12600
 
 DEBUG = False 
@@ -109,7 +109,7 @@ class trade_coin(object):
         self.strategy = MultiFramePOCStrategy(
             long_rule=RuleConfig.long_rule, 
             short_rule=RuleConfig.short_rule, 
-            timeout=150 * 3,
+            timeout=150,
             max_open2equity_pct=4)  #超出后，每分钟最多挂单3个
         self.strategy_log_interval = 0
 
@@ -141,32 +141,7 @@ class trade_coin(object):
         print(asks)
         print(bids)
 
-    # def get_liquidation(self):
-    #     # 按最后一个 '-' 拆分
-    #     inst_family = self.symbol.rsplit("-", 1)[0]
-    #     # inst_family 现在就是 "ETH-USDT"
-    #     liquidation_orders = self.publicAPI.get_liquidation_orders('SWAP', instId=self.symbol, uly=inst_family, state='filled')
-    #     liquidation_details = liquidation_orders['data'][0]['details']
-    #     long_px_sz_accum = 0
-    #     long_sz_accum = 0
-
-    #     short_px_sz_accum = 0
-    #     short_sz_accum = 0
-
-    #     for item in liquidation_details:
-    #         px, sz = float(item['bkPx']), float(item['sz'])
-    #         if 'long' == item['posSide']:
-    #             long_px_sz_accum += px * sz
-    #             long_sz_accum += sz
-    #         else:
-    #             short_px_sz_accum += px * sz
-    #             short_sz_accum += sz
-    #     liquidation_long_vwap = long_px_sz_accum / long_sz_accum
-    #     liquidation_short_vwap = short_px_sz_accum / short_sz_accum
-    #     print(f'liquidation_long_vwap = {liquidation_long_vwap}, liquidation_short_vwap = {liquidation_short_vwap}')
-        
-    #     plot_liquidation_vp(liquidation_details=liquidation_details)
-
+    
     def get_liquidation(self, start_date, end_date):
         # 按最后一个 '-' 拆分
         inst_family = self.symbol.rsplit("-", 1)[0]
@@ -330,7 +305,7 @@ class trade_coin(object):
 
 
                 atr_1x =  self.multiFrameVwap.atr_dic['ATR'].iloc[-1]
-                if 1:
+                if 0:
                     if self.direction == -2:
                         negative_atr = atr_1x
                         positive_atr = 0
@@ -1100,7 +1075,7 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(150 * 2)
+                time.sleep(15)
             for t in threads:
                 t.join()
         except:

@@ -8,8 +8,8 @@ def resample_to_7_5m(df):
     resampled_data = []
 
     # 将 DataFrame 以 15 分钟为单位进行重采样
-    # for ts, group in df.resample('15min'):
-    for ts, group in df.resample('7.5min'):
+    for ts, group in df.resample('2.5min'):
+    # for ts, group in df.resample('7.5min'):
         if not group.empty:  # 确保组中有数据
             open_price = group.iloc[0]['open']  # 第一条数据的开盘价
             high_price = group['high'].max()     # 最高价

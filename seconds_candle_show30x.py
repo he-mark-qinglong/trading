@@ -39,7 +39,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l,
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 1000 + LIMIT_K_N_APPEND 
 LIMIT_K_N += 3000
-# LIMIT_K_N += 12600
+# LIMIT_K_N += 252600
 
 import pandas as pd
 

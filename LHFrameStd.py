@@ -223,14 +223,18 @@ class MultiTFvp_poc:
             close.rolling(self.window_SFrame).std() * 0.9
             + S_swing * 0.1
         ) 
+        self.SFrame_price_std = self.SFrame_price_std.clip(lower= 1.2/100 * self.SFrame_vwap_poc)
+        self.SFrame_price_std = self.SFrame_price_std.clip(lower= 0.6/100 * self.SFrame_vwap_poc)
         self.HFrame_price_std = (
             close.rolling(self.window_HFrame).std() * 0.9
             + H_swing * 0.1
         ) 
+        self.HFrame_price_std = self.HFrame_price_std.clip(lower = 0.5/100 * self.HFrame_vwap_poc)
+        # self.HFrame_price_std = self.HFrame_price_std.clip(lower = 1/100 * self.HFrame_vwap_poc)
 
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
-        rma = lambda s: ta.rma(s, length=self.rma_smooth_window)
-        rma_s = lambda s: ta.rma(s, length=self.rma_smooth_window_s)
+        rma = lambda s: ta.ema(s, length=self.rma_smooth_window)
+        rma_s = lambda s: ta.ema(s, length=self.rma_smooth_window_s)
         slow, shigh = self.slow_poc, self.shigh_poc
         hlow, hhigh = self.hlow_poc, self.hhigh_poc
 
@@ -239,14 +243,14 @@ class MultiTFvp_poc:
 
         # SFrame
         self.SFrame_vwap_up_poc    = rma_s(shigh)
-        self.SFrame_vwap_up_getin  = rma_s(shigh + self.SFrame_price_std * self.febonaqis[3])
-        self.SFrame_vwap_up_sl     = rma_s(shigh + self.SFrame_price_std * self.febonaqis[4])
-        self.SFrame_vwap_up_sl2    = rma_s(shigh + self.SFrame_price_std * self.febonaqis[5])
+        self.SFrame_vwap_up_getin  = rma_s(shigh + self.SFrame_price_std * self.febonaqis[2])
+        self.SFrame_vwap_up_sl     = rma_s(shigh + self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_up_sl2    = rma_s(shigh + self.SFrame_price_std * self.febonaqis[4])
 
         self.SFrame_vwap_down_poc    = rma_s(slow)
-        self.SFrame_vwap_down_getin  = rma_s(slow - self.SFrame_price_std * self.febonaqis[3])
-        self.SFrame_vwap_down_sl     = rma_s(slow - self.SFrame_price_std * self.febonaqis[4])
-        self.SFrame_vwap_down_sl2    = rma_s(slow - self.SFrame_price_std * self.febonaqis[5])
+        self.SFrame_vwap_down_getin  = rma_s(slow - self.SFrame_price_std * self.febonaqis[2])
+        self.SFrame_vwap_down_sl     = rma_s(slow - self.SFrame_price_std * self.febonaqis[3])
+        self.SFrame_vwap_down_sl2    = rma_s(slow - self.SFrame_price_std * self.febonaqis[4])
 
         # HFrame（取更保守的 max/min）
         self.HFrame_vwap_up_poc    = rma(hhigh)
