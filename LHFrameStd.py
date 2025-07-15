@@ -29,8 +29,8 @@ class MultiTFvp_poc:
         self.window_HFrame       = window_HFrame
         self.window_SFrame       = window_SFrame
         self.std_window_LFrame   = std_window_LFrame
-        self.rma_smooth_window   = std_window_LFrame
-        self.rma_smooth_window_s   = std_window_LFrame
+        self.rma_smooth_window   = int(std_window_LFrame)
+        self.rma_smooth_window_s   = int(std_window_LFrame)
         
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         
