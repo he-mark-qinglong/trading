@@ -12,7 +12,8 @@ def compute_dynamic_kama(
     intervalP: float = 0.01,
     minLen: int = 10,
     maxLen: int = 60,
-    volLen: int = 30
+    volLen: int = 30,
+    hl: int = 9
 ) -> pd.DataFrame:
     """
     Compute two KAMA lines with adaptive ER window lengths based on volatility.
@@ -20,7 +21,12 @@ def compute_dynamic_kama(
       - dynLen1, dynLen2 : adaptive ER window lengths
       - kama1, kama2     : the two KAMA series
     """
-    src = df[src_col].astype(float).reset_index(drop=True)
+    src_orig = df[src_col].astype(float).reset_index(drop=True)
+    n = len(src_orig)
+
+    # 1. 预先 EWMA 衰减
+    alpha = 1 - 2 ** (-1.0 / hl)
+    src = src_orig.ewm(alpha=alpha, adjust=False).mean()
     n = len(src)
 
     # Derived parameters
@@ -88,6 +94,8 @@ def compute_dynamic_kama(
     out['kama2']    = kama2
 
     return out
+
+
 
 # Example usage:
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ class MultiTFvp_poc:
                  window_LFrame=12,
                  window_HFrame=12*10,
                  window_SFrame=12*10*4,
-                 std_window_LFrame=15):
+                 std_window_LFrame=5):
         self.lambd               = lambd
         self.window_LFrame       = window_LFrame
         self.window_HFrame       = window_HFrame
@@ -44,6 +44,8 @@ class MultiTFvp_poc:
         self.SFrame_vwap_poc       = pd.Series(dtype=float)
         self.slow_poc            = pd.Series(dtype=float)
         self.shigh_poc           = pd.Series(dtype=float)
+        self.slow_poc2            = pd.Series(dtype=float)
+        self.shigh_poc2           = pd.Series(dtype=float)
         self.hlow_poc            = pd.Series(dtype=float)
         self.hhigh_poc           = pd.Series(dtype=float)
 
@@ -71,40 +73,54 @@ class MultiTFvp_poc:
         """在一段 df_block 上并行计算 vp_poc 和 band，返回带 index 的 Series"""
         o, c, v = df_block['open'], df_block['close'], df_block['vol']
         with ThreadPoolExecutor(max_workers=3) as ex:
+            sigma3 = 99.73/100
+            sigma2 = 95.45/100
+
             fL = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_LFrame, 60, 0.995, 0.99,
+                           self.window_LFrame, 60, sigma2, 0.99,
                            debug=debug)
             fH = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_HFrame, 60, 1-0.0027, 0.99,
+                           self.window_HFrame, 60, sigma3, 0.99,
                            debug=debug)
             fS = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
-                           self.window_SFrame, 60, 1-0.0027, 0.99,
+                           self.window_SFrame, 60, sigma3, 0.99,
                            debug=debug)
             hvp = fH.result()
             svp = fS.result()
+
+            
             fbH = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
                             length=self.window_HFrame, bins=60,
-                            pct=0.0027/2, decay=0.995, vwap_series=hvp,
+                            pct=(1-sigma3)/2, decay=0.995, vwap_series=hvp,
                             debug=debug)
-            fbS = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
+            fbS3 = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
                             length=self.window_SFrame, bins=60,
-                            pct=0.0027/2, decay=0.995, vwap_series=svp,
+                            pct=(1-sigma3)/2, decay=0.995, vwap_series=svp,
                             debug=debug)
-
+            
+            fbS2 = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
+                            open_prices=o, close_prices=c, vol=v,
+                            length=self.window_SFrame, bins=60,
+                            pct=(1-sigma2)/2, decay=0.995, vwap_series=svp,
+                            debug=debug)
+            
         idx = df_block.index
-        slow_arr, shigh_arr = fbS.result()
+        slow_arr3, shigh_arr3 = fbS3.result()
+        slow_arr2, shigh_arr2 = fbS2.result()
         hlow_arr,  hhigh_arr = fbH.result()
         return {
             'L':     pd.Series(fL.result(),   index=idx),
             'H':     pd.Series(hvp,           index=idx),
             'S':     pd.Series(svp,           index=idx),
-            'slow':  pd.Series(slow_arr,      index=idx),
-            'shigh': pd.Series(shigh_arr,     index=idx),
+            'slow3':  pd.Series(slow_arr3,      index=idx),
+            'shigh3': pd.Series(shigh_arr3,     index=idx),
+            'slow2':  pd.Series(slow_arr2,      index=idx),
+            'shigh2': pd.Series(shigh_arr2,     index=idx),
             'hlow':  pd.Series(hlow_arr,      index=idx),
             'hhigh': pd.Series(hhigh_arr,     index=idx),
         }
@@ -186,8 +202,10 @@ class MultiTFvp_poc:
         self.LFrame_vwap_poc = take_new(self.LFrame_vwap_poc, out['L'])
         self.HFrame_vwap_poc       = take_new(self.HFrame_vwap_poc,       out['H'])
         self.SFrame_vwap_poc       = take_new(self.SFrame_vwap_poc,       out['S'])
-        self.slow_poc            = take_new(self.slow_poc,            out['slow'])
-        self.shigh_poc           = take_new(self.shigh_poc,           out['shigh'])
+        self.slow_poc            = take_new(self.slow_poc,            out['slow3'])
+        self.shigh_poc           = take_new(self.shigh_poc,           out['shigh3'])
+        self.slow_poc2            = take_new(self.slow_poc2,            out['slow2'])
+        self.shigh_poc2           = take_new(self.shigh_poc2,           out['shigh2'])
         self.hlow_poc            = take_new(self.hlow_poc,            out['hlow'])
         self.hhigh_poc           = take_new(self.hhigh_poc,           out['hhigh'])
 
@@ -236,6 +254,7 @@ class MultiTFvp_poc:
         rma = lambda s: ta.ema(s, length=self.rma_smooth_window)
         rma_s = lambda s: ta.ema(s, length=self.rma_smooth_window_s)
         slow, shigh = self.slow_poc, self.shigh_poc
+        slow2, shigh2 = self.slow_poc2, self.shigh_poc2
         hlow, hhigh = self.hlow_poc, self.hhigh_poc
 
         hlow = np.minimum(slow, hlow)
@@ -243,14 +262,14 @@ class MultiTFvp_poc:
 
         # SFrame
         self.SFrame_vwap_up_poc    = rma_s(shigh)
-        self.SFrame_vwap_up_getin  = rma_s(shigh + self.SFrame_price_std * self.febonaqis[2])
-        self.SFrame_vwap_up_sl     = rma_s(shigh + self.SFrame_price_std * self.febonaqis[3])
-        self.SFrame_vwap_up_sl2    = rma_s(shigh + self.SFrame_price_std * self.febonaqis[4])
+        self.SFrame_vwap_up_getin  = rma_s(shigh2)  #shigh > shigh2
+        self.SFrame_vwap_up_sl     = rma_s(shigh + (shigh - shigh2))
+        self.SFrame_vwap_up_sl2    = rma_s(shigh + 2*(shigh - shigh2))
 
         self.SFrame_vwap_down_poc    = rma_s(slow)
-        self.SFrame_vwap_down_getin  = rma_s(slow - self.SFrame_price_std * self.febonaqis[2])
-        self.SFrame_vwap_down_sl     = rma_s(slow - self.SFrame_price_std * self.febonaqis[3])
-        self.SFrame_vwap_down_sl2    = rma_s(slow - self.SFrame_price_std * self.febonaqis[4])
+        self.SFrame_vwap_down_getin  = rma_s(slow2)  #slow2 > slow
+        self.SFrame_vwap_down_sl     = rma_s(slow - (slow2 - slow))
+        self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (slow2 - slow))
 
         # HFrame（取更保守的 max/min）
         self.HFrame_vwap_up_poc    = rma(hhigh)
@@ -270,7 +289,7 @@ class MultiTFvp_poc:
         self.df = None
         for attr in [
             'LFrame_vwap_poc','HFrame_vwap_poc','SFrame_vwap_poc',
-            'slow_poc','shigh_poc','hlow_poc','hhigh_poc'
+            'slow_poc','shigh_poc', 'slow_poc2','shigh_poc2', 'hlow_poc','hhigh_poc'
         ]:
             setattr(self, attr, pd.Series(dtype=float))
         self.append_df(coin_date_df, debug=debug)

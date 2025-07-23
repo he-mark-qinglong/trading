@@ -15,8 +15,8 @@ import LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
-# from db_read import read_and_sort_df
-from history_kline import read_and_sort_df
+from db_read import read_and_sort_df
+# from history_kline import read_and_sort_df
 
 # 引入我们之前写好的 KAMA 计算函数
 from dynamic_kama import compute_dynamic_kama
@@ -26,6 +26,7 @@ use30x = True
 symbol = "ETH-USDT-SWAP"
 
 DEBUG = False
+DEBUG = True
 
 DB_PATH = f'{symbol}.db'
 client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
@@ -39,8 +40,9 @@ multiVwap = LHFrameStd.MultiTFvp_poc(
 )
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 1000 + LIMIT_K_N_APPEND + 3000
-# LIMIT_K_N += 50000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND 
+TREND_LENGTH = 6000
+LIMIT_K_N += TREND_LENGTH
 
 app = Dash(__name__)
 app.layout = html.Div([
@@ -73,6 +75,7 @@ def update_graph(n):
         print("read df and convert takes time:", time.time() - before)
 
         before = time.time()
+        # multiVwap.calculate_SFrame_vwap_poc_and_std(df.iloc[-(LIMIT_K_N - TREND_LENGTH):], DEBUG)
         multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
         print("calc vwap takes time:", time.time() - before)
 
@@ -103,7 +106,23 @@ def update_graph(n):
             maxLen=60,
             volLen=30
         )
-        df_kama = compute_dynamic_kama(df, **kama_params)
+        kama_btc_params = dict(
+            src_col="close",
+            len_er=200,
+            fast=9,
+            slow2fast_times=2.0,
+            slow=900,
+            intervalP=0.01,
+            minLen=10,
+            maxLen=60,
+            volLen=30
+        )
+        before = time.time()
+        # df_kama = compute_dynamic_kama(df, **kama_params)
+        df_kama = compute_dynamic_kama(df, **kama_btc_params)
+        
+        
+        print("compute_dynamic_kama takes time:", time.time() - before)
 
         # --- 2. 子图：3 行 ---
         fig = make_subplots(
@@ -124,11 +143,14 @@ def update_graph(n):
         for name, color in {
             **{k:'purple'      for k in ["SFrame_vwap_poc"]},
             **{k:'magenta'     for k in ["HFrame_vwap_poc"]},
-            **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
+            # **{k:'orangered'   for k in ["HFrame_vwap_up_poc","HFrame_vwap_down_poc"]},
             **{k:'deeppink'    for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
             **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'blue'        for k in ["HFrame_vwap_up_sl2","HFrame_vwap_down_sl2"]},
-            **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2","SFrame_vwap_down_sl2"]},
+            **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
+            **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
+
+            **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
+            **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},
         }.items():
             series = getattr(multiVwap, name, None)
             if isinstance(series, pd.Series):
@@ -258,9 +280,6 @@ def update_graph(n):
     except Exception as e:
         return go.Figure(), f"渲染错误: {e}"
 
-# def execute_close_position(): ...
-
-# @app.callback(...) close handlers...
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050 if use30x else 8051)
+    app.run(debug=True, port=8050)

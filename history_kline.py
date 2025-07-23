@@ -52,7 +52,8 @@ class HistoricalDataLoader:
         symbol: str,  
         timeframe: str,  
         data_manager,  
-        limit=365*24*12
+        limit=365*24*12,
+        local_only = False
     ) -> pd.DataFrame:  
         """  
         自动加载并补充历史数据到最新，检查并补全缺失数据。  
@@ -66,7 +67,8 @@ class HistoricalDataLoader:
 
             # 加载本地数据  
             existing_data = data_manager.load_data(symbol, timeframe)  
-            return existing_data
+            if local_only:
+                return existing_data
             
             # print(f'symbol:{symbol} timeframe:{timeframe} existing_data:{existing_data.head}')
             # 确定拉取起点  
@@ -95,7 +97,7 @@ class HistoricalDataLoader:
                 return timestamp_after_time  
             
             current_time = datetime.now()
-            current_timestamp = get_timestamp_before_minutes(current_time, limit*(5 if timeframe == '5m' else 1)) 
+            current_timestamp = get_timestamp_before_minutes(current_time, limit*(5 if timeframe == '5m' else 15)) 
             while current_timestamp is None or current_timestamp < end_timestamp:  
                 ohlcv = self.exchange.fetch_ohlcv(  
                     formatted_symbol,  
@@ -293,17 +295,24 @@ def main():
 
 def read_and_sort_df(client=None, LIMIT_K_N=None):
     data_manager = DataManager('../data')  
+    
     loader = HistoricalDataLoader('binance')  
+    # loader = HistoricalDataLoader('okx')  
+
     symbol = "BTC-USDT-SWAP"
-    # symbol = "ETH-USDT-SWAP"
-    timeframe = '15m'
-    df = loader.fetch_historical_data(symbol, timeframe, data_manager, 50000)  
+    symbol = "ETH-USDT-SWAP"
+    # symbol = "XAUT-USDT-SWAP"
+    timeframe = '3m'
+    timeframe = '1h'
+    df = loader.fetch_historical_data(symbol, timeframe, data_manager, 25000,
+                                    #    local_only=True
+                                       )  
+    print(df.head)
     df['vol'] = df['volume']
 
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
-    print(df.head)
-
-    return df.iloc[-50000:]
+    
+    return df.iloc[-25000:]
 
 if __name__ == "__main__":  
     # main()

@@ -30,7 +30,8 @@ import builtins
 
 from db_client import SQLiteWALClient
 from db_read import read_and_sort_df
-from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig,  weakLongRuleConfig
+from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig,  weakLongRuleConfig, OrderSignal
+from dynamic_kama import compute_dynamic_kama
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -42,14 +43,16 @@ flag='0'
 
 from LHFrameStd import MultiTFvp_poc, WindowConfig
 from plot_mtf import  plot_all_multiftfpoc_vars, plot_liquidation_vp
+
 windowConfig = WindowConfig()
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
-LIMIT_K_N = 1000 + LIMIT_K_N_APPEND 
-# LIMIT_K_N += 3000
+LIMIT_K_N = 500 + LIMIT_K_N_APPEND 
+TREND_LENGTH = 6000
+LIMIT_K_N += TREND_LENGTH
 # LIMIT_K_N += 12600
 
 DEBUG = False 
-DEBUG = True
+# DEBUG = True
     
 MAX_DAILY_DRAW = 0.06
 
@@ -203,7 +206,7 @@ class trade_coin(object):
             if time.time() - self.direction_time >= 3600:
                 self.direction = self.mv_direction()
 
-            self.get_open_interest()
+                self.get_open_interest()
             
             if time.time()-self.asset_time>604:
                 self.usdt_total=self.get_usdt_total()
@@ -227,7 +230,21 @@ class trade_coin(object):
                 print('++++当日资金回撤百分比为%s'%(1-max_draw),self.usdt_total,max(self.asset_record))
 
             self.coin_data = self.get_kline(init=True)
-            self.multiFrameVwap.calculate_SFrame_vwap_poc_and_std(self.coin_data, DEBUG)
+            self.multiFrameVwap.calculate_SFrame_vwap_poc_and_std(self.coin_data.iloc[-(LIMIT_K_N - TREND_LENGTH):], DEBUG)
+                
+            kama_params = dict(
+                src_col="close",
+                len_er=200,
+                fast=9,
+                slow2fast_times=2.0,
+                slow=900,
+                intervalP=0.01,
+                minLen=10,
+                maxLen=60,
+                volLen=30
+            )
+            trend_df = compute_dynamic_kama(self.coin_data, **kama_params)
+            
             
             #debug ploting content
             # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, False)
@@ -251,6 +268,9 @@ class trade_coin(object):
                     print(e)
                     return 
                 
+                sig_long = None
+                sig_short = None
+                
                 if 1:
                     # 1) 检查超时撤单
                     for side in ("long", "short"):
@@ -261,20 +281,52 @@ class trade_coin(object):
                     # 2) 评估新信号并下单
                     all_values = sum(positionAmount_dict_sub.values())
                     open2equity_pct = all_values/self.usdt_total
+                    kama_delta = trend_df['kama1'] -  trend_df['kama2']
+                    if trend_df['kama1'].iloc[-1] > trend_df['kama2'].iloc[-1] and sum(kama_delta.iloc[-1000:]) > 0:
+                        self.cancel_order('long')  
+                        self.strategy.clear_order('long')
 
-                    sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
-                    sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
-                    record = self.strategy.eval_history[-1]
-                    print(record['side'])
-                    if record['tiers']:
-                        print(record['tiers'][0])
-                    if self.strategy_log_interval % 20 == 0:
-                        with builtins.open("eval_logs.json","w") as f:
-                            import json
-                            json.dump(self.strategy.eval_history[-1], f, default=str)
-                        if self.strategy_log_interval > 9999999:
-                            self.strategy_log_interval = 0
-                    self.strategy_log_interval += 1
+                        sig_short = None
+                        if (open2equity_pct < 4):
+                            sig_long = OrderSignal(
+                                side='long',
+                                action=True,
+                                price=trend_df['kama1'].iloc[-1],
+                                amount=1,
+                                order_type="limit",
+                                order_time=None,
+                                tier_explain=None
+                            )
+                    elif trend_df['kama1'].iloc[-1] < trend_df['kama2'].iloc[-1] and sum(kama_delta.iloc[-1000:]) < 0:
+                        self.cancel_order('short')  
+                        self.strategy.clear_order('short')
+
+                        sig_long = None
+                        if (open2equity_pct < 4):
+                            #空头用kama2进场，调试阶段稍微安全一些。
+                            sig_short = OrderSignal(
+                                side='short',
+                                action=True,
+                                price=trend_df['kama1'].iloc[-1],
+                                amount=1,
+                                order_type="limit",
+                                order_time=None,
+                                tier_explain=None
+                            )
+                    else :
+                        sig_short = self.strategy.evaluate("short", cur_close, close, self.multiFrameVwap, open2equity_pct)
+                        sig_long  = self.strategy.evaluate("long",  cur_close, close, self.multiFrameVwap,  open2equity_pct)
+                        record = self.strategy.eval_history[-1]
+                        print(record['side'])
+                        if record['tiers']:
+                            print(record['tiers'][0])
+                        if self.strategy_log_interval % 20 == 0:
+                            with builtins.open("eval_logs.json","w") as f:
+                                import json
+                                json.dump(self.strategy.eval_history[-1], f, default=str)
+                            if self.strategy_log_interval > 9999999:
+                                self.strategy_log_interval = 0
+                        self.strategy_log_interval += 1
                 else:
                     time.sleep(60)
                     sig_long = None
@@ -294,7 +346,7 @@ class trade_coin(object):
                     start_date = end_date - datetime.timedelta(days=5)
 
                     # 调用 get_liquidation 方法
-                    self.get_liquidation(start_date, end_date)
+                    # self.get_liquidation(start_date, end_date)
                 if sig_long != None or sig_short != None:
                     print(f'symbol={self.symbol}, self.upl_long_open=={self.upl_long_open}, \n\t sig_long=={sig_long\
                             },\nself.upl_short_open=={self.upl_short_open==1}, \n\tsig_short=={sig_short}, ',
@@ -305,7 +357,7 @@ class trade_coin(object):
 
 
                 atr_1x =  self.multiFrameVwap.atr_dic['ATR'].iloc[-1]
-                if 0:
+                if 1:
                     if self.direction == -2:
                         negative_atr = atr_1x
                         positive_atr = 0
@@ -354,10 +406,14 @@ class trade_coin(object):
                             self.usdt_total=self.get_usdt_total()
                             model='buyshort'
                             if amount_short == 0:
-                                price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(50).max())
+                                price0=max(sig_short.price + positive_atr, self.coin_data['high'].tail(20).max())
+                                if self.multiFrameVwap.HFrame_vwap_poc.iloc[-1] < trend_df['kama2'].iloc[-1]:
+                                    price0 = max(price0, self.multiFrameVwap.HFrame_vwap_poc.iloc[-1])
+                                if self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] < trend_df['kama2'].iloc[-1]:
+                                    price0 = max(price0, self.multiFrameVwap.SFrame_vwap_poc.iloc[-1])
                                 # price0 = max(price0, newest_kline['close'].max()) 
                             else:  #一开仓按照最新的最低价挂单，因为之前触及后，sl会移动，导致后续虽然成本更差，但是不一定还能触及sl等价格。
-                                price0=max(sig_short.price, self.coin_data['high'].tail(50).max())
+                                price0=max(sig_short.price, self.coin_data['high'].tail(40).max())
                                 # price0 = max(price0, newest_kline['close'].max()) 
                             price = price0
                             fv=self.fv[self.symbol]
@@ -365,7 +421,7 @@ class trade_coin(object):
                             
                             symbol=self.symbol
                             place_order=self.create_order1(symbol,price,amount,model) 
-                            print('已经下空单:', place_order,symbol,model)
+                            print('已经下空单:', price0, place_order,symbol,model)
                             try:
                                 # plot_all_multiftfpoc_vars( self.multiFrameVwap, self.symbol, True)
                                 logging.info((self.user,symbol,'sig_short.price',sig_short.price,'price0',price0,time11,model))
@@ -384,9 +440,14 @@ class trade_coin(object):
                             self.usdt_total=self.get_usdt_total()
                             model='buylong'
                             if amount_long == 0:
-                                price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(50).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                                price0=min(sig_long.price - positive_atr, self.coin_data['low'].tail(20).min()) #if is_long_un_opend else cur_low  #首次开仓立刻成交。limit挂单需要配合撤单 
+                                
+                                if self.multiFrameVwap.HFrame_vwap_poc.iloc[-1] > trend_df['kama2'].iloc[-1]:
+                                    price0 = min(price0, self.multiFrameVwap.HFrame_vwap_poc.iloc[-1])
+                                if self.multiFrameVwap.SFrame_vwap_poc.iloc[-1] > trend_df['kama2'].iloc[-1]:
+                                    price0 = min(price0, self.multiFrameVwap.SFrame_vwap_poc.iloc[-1])
                             else:
-                                price0=min(sig_long.price, self.coin_data['low'].tail(50).min()) 
+                                price0=min(sig_long.price, self.coin_data['low'].tail(40).min()) 
                             price=price0
                             fv=self.fv[self.symbol]
                             amount=  sig_long.amount #max(float(round(self.usdt_total/self.asset_coe/price0/fv)), 1) #* get_martingale_coefficient(len(record_buy_total_long))
@@ -397,7 +458,7 @@ class trade_coin(object):
                                 logging.info((self.user,symbol,'sig_long.price',sig_long.price,'price0',price0,time11,model))
                             except:
                                 pass
-                            print('已经下多单::', place_order,symbol,model)
+                            print('已经下多单::', price0, place_order,symbol,model)
                            
 
                     except Exception as e:
@@ -410,7 +471,7 @@ class trade_coin(object):
                     # if len(lever_dic) > 0:
                     #     lever_dic = lever_dic['data'][0]
                     #     fee_require_profit = 0.0004 * float(lever_dic['lever'])
-                    force_exit_profit = 0.02  #机构的一半强制止盈要求（伦敦、纽约，因为它的4倍是5%、波动亏损5%人是比较无感的。）
+                    force_exit_profit = 0.015  #机构的一半强制止盈要求（伦敦、纽约，因为它的4倍是5%、波动亏损5%人是比较无感的。）
                     exit_required_profit=max(fee_require_profit,atr_1x/cur_close * 2)  
                     
                     ChineseTradeTime = False
@@ -926,16 +987,18 @@ class trade_coin(object):
             unfill=self.tradeAPI.get_order_list(instId='')['data']
             time.sleep(0.1)
             print('查询订单请求')
+
+            if len(unfill)>0:
+                print('撤单开始')
+                for i in range(len(unfill)):
+                    instid=unfill[i]['instId']
+                    if instid == self.symbol:
+                        orderid=unfill[i]['ordId']
+                        self.tradeAPI.cancel_order(instid, orderid)
         except:
             time.sleep(0.1)
         lock.release()
-        if len(unfill)>0:
-            print('撤单开始')
-            for i in range(len(unfill)):
-                instid=unfill[i]['instId']
-                if instid == self.symbol:
-                    orderid=unfill[i]['ordId']
-                    self.tradeAPI.cancel_order(instid, orderid)
+        
 
     def  get_entryprice_okx(self,symbol='BTCUSDT'):
          a11 = 1
@@ -1058,6 +1121,7 @@ if __name__=='__main__':
             time1=datetime.datetime.now()
             time11=time1.hour*100+time1.minute
             week_day=time1.isoweekday()
+
             threads=[]
             t1 = threading.Thread(target = aa1.trade1) 
             threads.append(t1)
@@ -1075,10 +1139,10 @@ if __name__=='__main__':
             for t in threads:
                 i+=1
                 t.start()
-                time.sleep(15)
+                time.sleep(150 * 4)
             for t in threads:
                 t.join()
         except:
-            time.sleep(5)
+            time.sleep(150)
             print('启动报错')
    
