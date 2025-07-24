@@ -41,7 +41,7 @@ multiVwap = LHFrameStd.MultiTFvp_poc(
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 500 + LIMIT_K_N_APPEND 
-TREND_LENGTH = 6000
+TREND_LENGTH = 60000
 LIMIT_K_N += TREND_LENGTH
 
 app = Dash(__name__)
@@ -109,9 +109,9 @@ def update_graph(n):
         kama_btc_params = dict(
             src_col="close",
             len_er=200,
-            fast=9,
+            fast=15,
             slow2fast_times=2.0,
-            slow=900,
+            slow=1800,
             intervalP=0.01,
             minLen=10,
             maxLen=60,

@@ -357,8 +357,8 @@ class RuleConfig:
                     ])
                 ])
             ],
-            limit_price_attr="SFrame_vwap_down_poc",
-            # limit_price_attr="SFrame_vwap_down_sl2"
+            # limit_price_attr="SFrame_vwap_down_poc",
+            limit_price_attr="SFrame_vwap_down_sl2"
         ),
 
     ])
