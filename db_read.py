@@ -2,15 +2,15 @@
 import pandas as pd
 import datetime
 
-def resample_to_7_5m(df):
+
+def resample_to(df, tf='5min'):
     df = df.set_index('datetime', drop=True)
     # 创建一个空的列表以存储合并结果
     resampled_data = []
 
     # 将 DataFrame 以 15 分钟为单位进行重采样
-    # for ts, group in df.resample('2.5min'):
-    for ts, group in df.resample('10min'):
-    # for ts, group in df.resample('30min'):
+    for ts, group in df.resample(tf):
+    # for ts, group in df.resample('2.5min' if origin else '30min'):
         if not group.empty:  # 确保组中有数据
             open_price = group.iloc[0]['open']  # 第一条数据的开盘价
             high_price = group['high'].max()     # 最高价
@@ -44,7 +44,6 @@ def resample_to_7_5m(df):
     # print(resampled_df.head(5))
     return resampled_df
 
-
 def read_and_sort_df(client, LIMIT_K_N):
     df = client.read_df(limit=LIMIT_K_N, order_by="ts DESC")
     #print('df.head:', df.head)
@@ -60,6 +59,4 @@ def read_and_sort_df(client, LIMIT_K_N):
 
     # 6) 保证数据是连续、升序的
     df = df.sort_index()
-    # print(df.head(5))
-    return resample_to_7_5m(df)
     return df

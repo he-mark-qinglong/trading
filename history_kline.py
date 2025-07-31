@@ -66,23 +66,23 @@ class HistoricalDataLoader:
             formatted_symbol = self.format_symbol(symbol)  
 
             # 加载本地数据  
-            existing_data = data_manager.load_data(symbol, timeframe)  
+            existing_data = data_manager.load_data(self.exchange_id, symbol, timeframe)  
             if local_only:
                 return existing_data
             
             # print(f'symbol:{symbol} timeframe:{timeframe} existing_data:{existing_data.head}')
             # 确定拉取起点  
             if existing_data is not None and not existing_data.empty:  
-                last_timestamp = int(existing_data.index[-1].timestamp() * 1000) + 1  
+                last_timestamp = int(existing_data.index[-1].timestamp()) + 1  
             else:  
                 last_timestamp = None  
 
             # 当前时间作为终点  
-            end_timestamp = int(time.time() * 1000)  
+            end_timestamp = int(time.time())  
 
             # 增量拉取数据  
             all_data = []  
-            current_timestamp = last_timestamp   
+            from_timestamp = last_timestamp   
             
             def get_timestamp_before_minutes(current_time, num_of_min: int) -> int:  
                 """获取当前时间往后推移指定数量的5分钟的时间戳（毫秒）。  
@@ -93,33 +93,60 @@ class HistoricalDataLoader:
                 # 计算推移后的时间  
                 after_time = current_time - timedelta(minutes=num_of_min)  
                 # 转换为时间戳（毫秒）  
-                timestamp_after_time = int(after_time.timestamp() * 1000)  
+                timestamp_after_time = int(after_time.timestamp())  
                 return timestamp_after_time  
             
-            current_time = datetime.now()
-            current_timestamp = get_timestamp_before_minutes(current_time, limit*(5 if timeframe == '5m' else 15)) 
-            while current_timestamp is None or current_timestamp < end_timestamp:  
-                ohlcv = self.exchange.fetch_ohlcv(  
-                    formatted_symbol,  
-                    timeframe=timeframe,  
-                    since=current_timestamp,  
-                    limit=limit  
-                )  
+            current_date = datetime.now()
+            # current_date = datetime.fromtimestamp(current_time/1000)
+            print(f'now date:{current_date}')
 
-                if not ohlcv:  
-                    break  
-                
+            # from_timestamp = get_timestamp_before_minutes(current_date, limit*(5 if timeframe == '5m' else 15)) 
+            from_timestamp = get_timestamp_before_minutes(current_date, 100) 
+            retry_time = 0
+
+            while from_timestamp is None or from_timestamp < end_timestamp:  
+                current_date = datetime.fromtimestamp(from_timestamp)
+                to_date = datetime.fromtimestamp(end_timestamp)
+                # print(f'going to get from date:{current_date} to {to_date}')
+                try:
+                    ohlcv = self.exchange.fetch_ohlcv(  
+                        formatted_symbol,  
+                        timeframe=timeframe,  
+                        since=from_timestamp * 1000,  
+                        limit=100  
+                    )  
+
+                    if not ohlcv:
+                        if retry_time < 10:
+                            retry_time += 1  
+                            continue
+                        else:
+                            break
+                except Exception as e:
+                    if retry_time < 10:
+                        retry_time += 1  
+                        continue
+                    else:
+                        break
                 if len(all_data) > 0:
-                    print(f'timeframe {timeframe}:{all_data[-1][0]/(60 * 1000)} < {ohlcv[0][0]/(60 * 1000)}')
-                all_data = all_data + ohlcv   
+                    #print(f'timeframe {timeframe}:{all_data[-1][0]/(60 * 1000)} < {ohlcv[0][0]/(60 * 1000)}')
+                    a = datetime.fromtimestamp(all_data[0][0]/1000)
+                    b = datetime.fromtimestamp(ohlcv[-1][0]/1000)
+                    c = datetime.fromtimestamp(ohlcv[0][0]/1000)
+                    print(f'datetime {timeframe}:{c} < {b} < {a}, got count:{len(ohlcv)}')
+                    print()
+                all_data = ohlcv + all_data    
                 # |-----all_data-----|-----ohlcv 1500 len-----|---------|current
                 multipliers = {'1m':1, '3m':3, '5m':5, '15m':15, '1h': 60, '4h':240, '1d':1440}
-                len_of_minute = multipliers[timeframe] * (limit-len(all_data))
-                current_timestamp = get_timestamp_before_minutes(current_time, len_of_minute)
-                if len(all_data) > limit:
+                # len_of_minute = multipliers[timeframe] * (limit-len(all_data))
+                # from_timestamp = get_timestamp_before_minutes(current_date, len_of_minute)
+                old_date = datetime.fromtimestamp(from_timestamp)
+                from_timestamp = get_timestamp_before_minutes(old_date, 100)
+                
+                if len(all_data) >= limit:
                     break 
                 # 避免触发频率限制  
-                time.sleep(self.exchange.rateLimit / 1000)  
+                time.sleep(self.exchange.rateLimit / 5000)  
 
             # 如果有新数据，创建 DataFrame  
             if all_data:  
@@ -153,7 +180,7 @@ class HistoricalDataLoader:
                                 formatted_symbol,  
                                 timeframe=timeframe,  
                                 since=start,  
-                                limit=limit  
+                                limit=300 #limit  
                             )  
                             if not ohlcv:  
                                 break  
@@ -163,7 +190,7 @@ class HistoricalDataLoader:
                     else:
                         print("No missing data found.")  
                 # 保存到本地文件  
-                data_manager.save_data(symbol, timeframe, combined_data)  
+                data_manager.save_data(self.exchange_id, symbol, timeframe, combined_data)  
                 print(f"Updated data saved for {symbol} {timeframe}, total rows: {len(combined_data)}")  
                 return combined_data.iloc[-min(len(combined_data), limit):]  
 
@@ -181,18 +208,18 @@ class DataManager:
         self.base_path = base_path  
         os.makedirs(base_path, exist_ok=True)  
 
-    def save_data(self, symbol, timeframe, df):  
+    def save_data(self, exchange_id, symbol, timeframe, df):  
         safe_symbol = symbol.replace('/', '_')  
-        directory = f"{self.base_path}/{safe_symbol}"  
+        directory = f"{self.base_path}/{exchange_id}_{safe_symbol}"  
         os.makedirs(directory, exist_ok=True)  
 
         filename = f"{directory}/{timeframe}.parquet"  
         df.to_parquet(filename)  
         print(f"Data saved to {filename}")  
 
-    def load_data(self, symbol, timeframe):  
+    def load_data(self, exchange_id, symbol, timeframe):  
         safe_symbol = symbol.replace('/', '_')  
-        filename = f"{self.base_path}/{safe_symbol}/{timeframe}.parquet"  
+        filename = f"{self.base_path}/{exchange_id}_{safe_symbol}/{timeframe}.parquet"  
         print('load file:', filename)
         if os.path.exists(filename):  
             return pd.read_parquet(filename)  
@@ -297,22 +324,29 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
     data_manager = DataManager('../data')  
     
     loader = HistoricalDataLoader('binance')  
-    # loader = HistoricalDataLoader('okx')  
+    loader = HistoricalDataLoader('okx')  
 
     symbol = "BTC-USDT-SWAP"
     symbol = "ETH-USDT-SWAP"
     # symbol = "XAUT-USDT-SWAP"
-    timeframe = '3m'
-    timeframe = '1h'
-    df = loader.fetch_historical_data(symbol, timeframe, data_manager, 25000,
-                                    #    local_only=True
+    timeframe = '5m'
+    # timeframe = '1h'
+    df = None
+    for i in range(10):
+        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 250_000,
+                                       local_only=True
                                        )  
-    print(df.head)
-    df['vol'] = df['volume']
+        if df.empty:
+            time.sleep(10)
+            continue
+        
+        df['vol'] = df['volume']
+        df['datetime'] = df.index
+        break
 
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
-    
-    return df.iloc[-25000:]
+    # print(df.index[0], df.index[-1])
+    return df.iloc[-250_000:]
 
 if __name__ == "__main__":  
     # main()

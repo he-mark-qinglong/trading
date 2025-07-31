@@ -92,9 +92,23 @@ def compute_dynamic_kama(
     out['dynLen2'] = dynLen2
     out['kama1']    = kama1
     out['kama2']    = kama2
-
+    
     return out
 
+def anchored_momentum_via_kama(kama1: pd.Series, kama2: pd.Series, signal_period: int):
+    df = pd.DataFrame({
+        'amom': kama1 - kama2
+    })
+    df['amoms'] = df['amom'].ewm(span=signal_period, adjust=False).mean()
+    df['hl'] = df['amom'] - df['amoms']
+
+    # 颜色判断
+    df['hlc'] = np.where(
+        df['amom'] > df['amoms'], 
+        np.where(df['amom'] >= 0, 'green', 'orange'),
+        np.where(df['amom'] >= 0, 'orange', 'red')
+    )
+    return df
 
 
 # Example usage:

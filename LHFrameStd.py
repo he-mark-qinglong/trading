@@ -39,20 +39,14 @@ class MultiTFvp_poc:
         self.df = None
 
         # 各种结果的全量 Series（索引与 self.df 保持一致）
-        self.LFrame_vwap_poc = pd.Series(dtype=float)
-        self.HFrame_vwap_poc       = pd.Series(dtype=float)
+        self.SFrame_center = pd.Series(dtype=float)
         self.SFrame_vwap_poc       = pd.Series(dtype=float)
         self.slow_poc            = pd.Series(dtype=float)
         self.shigh_poc           = pd.Series(dtype=float)
         self.slow_poc2            = pd.Series(dtype=float)
         self.shigh_poc2           = pd.Series(dtype=float)
-        self.hlow_poc            = pd.Series(dtype=float)
-        self.hhigh_poc           = pd.Series(dtype=float)
-
         # 向量化后的一些 Series
         self.LFrame_ohlc5_series = pd.Series(dtype=float)
-        self.SFrame_price_std    = pd.Series(dtype=float)
-        self.HFrame_price_std    = pd.Series(dtype=float)
 
         # 上下轨
         for attr in [
@@ -60,9 +54,6 @@ class MultiTFvp_poc:
             'SFrame_vwap_up_sl','SFrame_vwap_up_sl2','SFrame_vwap_down_poc',
             'SFrame_vwap_down_getin','SFrame_vwap_down_getout',
             'SFrame_vwap_down_sl','SFrame_vwap_down_sl2',
-            'HFrame_vwap_up_poc','HFrame_vwap_up_getin','HFrame_vwap_up_sl',
-            'HFrame_vwap_up_sl2','HFrame_vwap_down_poc','HFrame_vwap_down_getin',
-            'HFrame_vwap_down_sl','HFrame_vwap_down_sl2'
         ]:
             setattr(self, attr, pd.Series(dtype=float))
 
@@ -76,27 +67,13 @@ class MultiTFvp_poc:
             sigma3 = 99.73/100
             sigma2 = 95.45/100
 
-            fL = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
-                           o, c, v,
-                           self.window_LFrame, 60, sigma2, 0.99,
-                           debug=debug)
-            fH = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
-                           o, c, v,
-                           self.window_HFrame, 60, sigma3, 0.99,
-                           debug=debug)
             fS = ex.submit(vwap_calc.vpvr_center_vwap_log_decay,
                            o, c, v,
                            self.window_SFrame, 60, sigma3, 0.99,
                            debug=debug)
-            hvp = fH.result()
             svp = fS.result()
 
             
-            fbH = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
-                            open_prices=o, close_prices=c, vol=v,
-                            length=self.window_HFrame, bins=60,
-                            pct=(1-sigma3)/2, decay=0.995, vwap_series=hvp,
-                            debug=debug)
             fbS3 = ex.submit(vwap_calc.vpvr_pct_band_vwap_log_decay,
                             open_prices=o, close_prices=c, vol=v,
                             length=self.window_SFrame, bins=60,
@@ -112,17 +89,12 @@ class MultiTFvp_poc:
         idx = df_block.index
         slow_arr3, shigh_arr3 = fbS3.result()
         slow_arr2, shigh_arr2 = fbS2.result()
-        hlow_arr,  hhigh_arr = fbH.result()
         return {
-            'L':     pd.Series(fL.result(),   index=idx),
-            'H':     pd.Series(hvp,           index=idx),
             'S':     pd.Series(svp,           index=idx),
             'slow3':  pd.Series(slow_arr3,      index=idx),
             'shigh3': pd.Series(shigh_arr3,     index=idx),
-            'slow2':  pd.Series(slow_arr2,      index=idx),
-            'shigh2': pd.Series(shigh_arr2,     index=idx),
-            'hlow':  pd.Series(hlow_arr,      index=idx),
-            'hhigh': pd.Series(hhigh_arr,     index=idx),
+            's_low2':  pd.Series(slow_arr2,      index=idx),
+            's_high2': pd.Series(shigh_arr2,     index=idx),
         }
 
     def calc_atr(self, period=14, high_col="high", low_col="low", close_col="close", std_multiplier=2,):
@@ -178,9 +150,7 @@ class MultiTFvp_poc:
             self.df = tmp[~tmp.index.duplicated(keep='last')]
 
         # 3) 构造 block = overlap 上下文 + new_df
-        overlap = max(self.window_LFrame,
-                      self.window_HFrame,
-                      self.window_SFrame)
+        overlap = max(self.window_LFrame, self.window_SFrame)
         if old_df is None:
             block = new_df
         else:
@@ -199,15 +169,13 @@ class MultiTFvp_poc:
                 return old
             return pd.concat([old, new])
 
-        self.LFrame_vwap_poc = take_new(self.LFrame_vwap_poc, out['L'])
-        self.HFrame_vwap_poc       = take_new(self.HFrame_vwap_poc,       out['H'])
+        
         self.SFrame_vwap_poc       = take_new(self.SFrame_vwap_poc,       out['S'])
         self.slow_poc            = take_new(self.slow_poc,            out['slow3'])
         self.shigh_poc           = take_new(self.shigh_poc,           out['shigh3'])
-        self.slow_poc2            = take_new(self.slow_poc2,            out['slow2'])
-        self.shigh_poc2           = take_new(self.shigh_poc2,           out['shigh2'])
-        self.hlow_poc            = take_new(self.hlow_poc,            out['hlow'])
-        self.hhigh_poc           = take_new(self.hhigh_poc,           out['hhigh'])
+        self.slow_poc2            = take_new(self.slow_poc2,            out['s_low2'])
+        self.shigh_poc2           = take_new(self.shigh_poc2,           out['s_high2'])
+        self.SFrame_center = (self.slow_poc2 + self.shigh_poc2)/2
 
         # 6) 向量化后续计算
         self._run_vectorized()
@@ -225,62 +193,21 @@ class MultiTFvp_poc:
         self.SFrame_vwap_poc = ta.rma(self.SFrame_vwap_poc,
                                     length=self.rma_smooth_window_s)
 
-        # 3) swing 用于 std
-        def swing(vp_poc):
-            d_high = np.maximum(close - vp_poc, 0)
-            dh_max = d_high.rolling(240).max().abs()
-            d_low  = np.minimum(close - vp_poc, 0)
-            dl_min = d_low.rolling(240).min().abs()
-            return np.maximum(dh_max, dl_min)
-
-        H_swing = swing(self.HFrame_vwap_poc)
-        S_swing = swing(self.SFrame_vwap_poc)
-
-        # 4) 价格 std
-        self.SFrame_price_std = (
-            close.rolling(self.window_SFrame).std() * 0.9
-            + S_swing * 0.1
-        ) 
-        self.SFrame_price_std = self.SFrame_price_std.clip(lower= 1.2/100 * self.SFrame_vwap_poc)
-        self.SFrame_price_std = self.SFrame_price_std.clip(lower= 0.6/100 * self.SFrame_vwap_poc)
-        self.HFrame_price_std = (
-            close.rolling(self.window_HFrame).std() * 0.9
-            + H_swing * 0.1
-        ) 
-        self.HFrame_price_std = self.HFrame_price_std.clip(lower = 0.5/100 * self.HFrame_vwap_poc)
-        # self.HFrame_price_std = self.HFrame_price_std.clip(lower = 1/100 * self.HFrame_vwap_poc)
-
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
-        rma = lambda s: ta.ema(s, length=self.rma_smooth_window)
         rma_s = lambda s: ta.ema(s, length=self.rma_smooth_window_s)
         slow, shigh = self.slow_poc, self.shigh_poc
-        slow2, shigh2 = self.slow_poc2, self.shigh_poc2
-        hlow, hhigh = self.hlow_poc, self.hhigh_poc
-
-        hlow = np.minimum(slow, hlow)
-        hhigh = np.maximum(shigh, hhigh)
+        s_low2, s_high2 = self.slow_poc2, self.shigh_poc2
 
         # SFrame
         self.SFrame_vwap_up_poc    = rma_s(shigh)
-        self.SFrame_vwap_up_getin  = rma_s(shigh2)  #shigh > shigh2
-        self.SFrame_vwap_up_sl     = rma_s(shigh + (shigh - shigh2))
-        self.SFrame_vwap_up_sl2    = rma_s(shigh + 2*(shigh - shigh2))
+        self.SFrame_vwap_up_getin  = rma_s(s_high2)  #shigh > s_high2
+        self.SFrame_vwap_up_sl     = rma_s(shigh + (shigh - s_high2))
+        self.SFrame_vwap_up_sl2    = rma_s(shigh + 2*(shigh - s_high2))
 
         self.SFrame_vwap_down_poc    = rma_s(slow)
-        self.SFrame_vwap_down_getin  = rma_s(slow2)  #slow2 > slow
-        self.SFrame_vwap_down_sl     = rma_s(slow - (slow2 - slow))
-        self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (slow2 - slow))
-
-        # HFrame（取更保守的 max/min）
-        self.HFrame_vwap_up_poc    = rma(hhigh)
-        self.HFrame_vwap_up_getin  = rma(hhigh + self.HFrame_price_std* self.febonaqis[1])
-        self.HFrame_vwap_up_sl     = rma(hhigh + self.HFrame_price_std* self.febonaqis[3])
-        self.HFrame_vwap_up_sl2    = rma(hhigh + self.HFrame_price_std* self.febonaqis[5])
-
-        self.HFrame_vwap_down_poc    = rma(hlow)
-        self.HFrame_vwap_down_getin  = rma(hlow - self.HFrame_price_std* self.febonaqis[1])
-        self.HFrame_vwap_down_sl     = rma(hlow - self.HFrame_price_std* self.febonaqis[3])
-        self.HFrame_vwap_down_sl2    = rma(hlow - self.HFrame_price_std* self.febonaqis[5]) 
+        self.SFrame_vwap_down_getin  = rma_s(s_low2)  #s_low2 > slow
+        self.SFrame_vwap_down_sl     = rma_s(slow - (s_low2 - slow))
+        self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (s_low2 - slow))
 
     def calculate_SFrame_vwap_poc_and_std(self, coin_date_df, debug=False):
         """
@@ -288,8 +215,8 @@ class MultiTFvp_poc:
         """
         self.df = None
         for attr in [
-            'LFrame_vwap_poc','HFrame_vwap_poc','SFrame_vwap_poc',
-            'slow_poc','shigh_poc', 'slow_poc2','shigh_poc2', 'hlow_poc','hhigh_poc'
+            'SFrame_center','SFrame_vwap_poc',
+            'slow_poc','shigh_poc', 'slow_poc2','shigh_poc2',
         ]:
             setattr(self, attr, pd.Series(dtype=float))
         self.append_df(coin_date_df, debug=debug)
@@ -353,19 +280,20 @@ class MultiTFvp_poc:
         df = self.df.copy()
 
         def ema(s: pd.Series, per: int) -> pd.Series:
-            return s.ewm(span=per, adjust=False).mean()
+            alpha = 1 - 2 ** (-1.0 / per)
+            return s.ewm( alpha=alpha, adjust=False).mean()
 
         def sma(s: pd.Series, per: int) -> pd.Series:
             return s.rolling(per).mean()
 
         # --- 1) 计算 src ---
-        src = self.LFrame_vwap_poc.reindex(df.index)
+        src = self.SFrame_center.reindex(df.index)
         if sm:
             src = ema(src, smp)
 
         # --- 2) 计算 fast/slow momentum ---
         p = 2 * momentumPeriod + 1
-        base_sma = sma(self.LFrame_vwap_poc, p).reindex(df.index)
+        base_sma = sma(self.SFrame_center, p).reindex(df.index)
         df['amom']  = 100 * (src / base_sma - 1)
         df['amoms'] = sma(df['amom'], signalPeriod)
 
