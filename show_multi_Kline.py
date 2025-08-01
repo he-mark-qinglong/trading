@@ -76,7 +76,7 @@ def update_graph(n):
 
         # --- 3) 计算 Dynamic KAMA ---
         kama_kwargs = dict(src_col="close", len_er=30, fast=6,
-                          slow2fast_times=2.0, slow=120,
+                          second2first_times=2.0, slow=120,
                           intervalP=0.01, minLen=10, maxLen=60, volLen=30)
         df_kama1 = compute_dynamic_kama(df1, **kama_kwargs)
         df_kama2 = compute_dynamic_kama(df2, **kama_kwargs)

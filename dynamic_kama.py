@@ -7,13 +7,13 @@ def compute_dynamic_kama(
     src_col: str = 'close',
     len_er: int = 30,
     fast: int = 6,
-    slow2fast_times: float = 2.0,
+    second2first_times: float = 2.0,
     slow: int = 120,
     intervalP: float = 0.01,
     minLen: int = 10,
     maxLen: int = 60,
     volLen: int = 30,
-    hl: int = 9
+    hl: int = 3
 ) -> pd.DataFrame:
     """
     Compute two KAMA lines with adaptive ER window lengths based on volatility.
@@ -30,9 +30,9 @@ def compute_dynamic_kama(
     n = len(src)
 
     # Derived parameters
-    len2   = int(len_er * slow2fast_times)
-    fast2  = int(fast * slow2fast_times)
-    slow2  = int(slow * slow2fast_times)  
+    len2   = int(len_er * second2first_times)
+    fast2  = int(fast * second2first_times)
+    slow2  = int(slow * second2first_times)  
 
     # 1. compute normalized volatility (clamped 0~1)
     stdev_vol = src.rolling(volLen, min_periods=1).std()
@@ -87,7 +87,8 @@ def compute_dynamic_kama(
         kama2[i] = kama2[i-1] + sc2 * (src.iloc[i] - kama2[i-1])
 
     # attach to DataFrame
-    out = df.copy().reset_index(drop=True)
+    out = df.copy().reset_index()
+    
     out['dynLen1'] = dynLen1
     out['dynLen2'] = dynLen2
     out['kama1']    = kama1

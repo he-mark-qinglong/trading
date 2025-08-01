@@ -236,7 +236,7 @@ class trade_coin(object):
                 src_col="close",
                 len_er=200,
                 fast=15,
-                slow2fast_times=2.0,
+                second2first_times=2.0,
                 slow=1800,
                 intervalP=0.01,
                 minLen=10,

@@ -73,16 +73,16 @@ class HistoricalDataLoader:
             # print(f'symbol:{symbol} timeframe:{timeframe} existing_data:{existing_data.head}')
             # 确定拉取起点  
             if existing_data is not None and not existing_data.empty:  
-                last_timestamp = int(existing_data.index[-1].timestamp()) + 1  
+                first_timestamp = int(existing_data.index[0].timestamp()) + 1  
             else:  
-                last_timestamp = None  
+                first_timestamp = None  
 
             # 当前时间作为终点  
             end_timestamp = int(time.time())  
 
             # 增量拉取数据  
             all_data = []  
-            from_timestamp = last_timestamp   
+            from_timestamp = first_timestamp   
             
             def get_timestamp_before_minutes(current_time, num_of_min: int) -> int:  
                 """获取当前时间往后推移指定数量的5分钟的时间戳（毫秒）。  
@@ -101,7 +101,9 @@ class HistoricalDataLoader:
             print(f'now date:{current_date}')
 
             # from_timestamp = get_timestamp_before_minutes(current_date, limit*(5 if timeframe == '5m' else 15)) 
-            from_timestamp = get_timestamp_before_minutes(current_date, 100) 
+            if from_timestamp == None:
+                from_timestamp = get_timestamp_before_minutes(current_date, 100) 
+            
             retry_time = 0
 
             while from_timestamp is None or from_timestamp < end_timestamp:  
@@ -117,7 +119,7 @@ class HistoricalDataLoader:
                     )  
 
                     if not ohlcv:
-                        if retry_time < 10:
+                        if retry_time < 100:
                             retry_time += 1  
                             continue
                         else:
@@ -133,7 +135,7 @@ class HistoricalDataLoader:
                     a = datetime.fromtimestamp(all_data[0][0]/1000)
                     b = datetime.fromtimestamp(ohlcv[-1][0]/1000)
                     c = datetime.fromtimestamp(ohlcv[0][0]/1000)
-                    print(f'datetime {timeframe}:{c} < {b} < {a}, got count:{len(ohlcv)}')
+                    print(f'datetime {timeframe}:{c} < {b} < {a}, got count:{len(ohlcv)} pct:{round((len(all_data) + len(existing_data))/limit, 2)}')
                     print()
                 all_data = ohlcv + all_data    
                 # |-----all_data-----|-----ohlcv 1500 len-----|---------|current
@@ -143,7 +145,7 @@ class HistoricalDataLoader:
                 old_date = datetime.fromtimestamp(from_timestamp)
                 from_timestamp = get_timestamp_before_minutes(old_date, 100)
                 
-                if len(all_data) >= limit:
+                if len(all_data) + len(existing_data) >= limit:
                     break 
                 # 避免触发频率限制  
                 time.sleep(self.exchange.rateLimit / 5000)  
@@ -159,7 +161,7 @@ class HistoricalDataLoader:
 
                 # 合并新数据和本地数据  
                 if existing_data is not None and not existing_data.empty:  
-                    combined_data = pd.concat([existing_data, new_data])  
+                    combined_data = pd.concat([new_data, existing_data])  
                     combined_data = combined_data[~combined_data.index.duplicated(keep='last')]  
                     combined_data.sort_index(inplace=True)  
                 else:  
@@ -333,7 +335,7 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
     # timeframe = '1h'
     df = None
     for i in range(10):
-        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 250_000,
+        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 500_000,
                                        local_only=True
                                        )  
         if df.empty:
@@ -346,7 +348,7 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
 
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
     # print(df.index[0], df.index[-1])
-    return df.iloc[-250_000:]
+    return df.iloc[-500_000:]
 
 if __name__ == "__main__":  
     # main()

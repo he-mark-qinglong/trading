@@ -15,8 +15,8 @@ import LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
-# from db_read import read_and_sort_df
-from history_kline import read_and_sort_df
+from db_read import read_and_sort_df
+# from history_kline import read_and_sort_df
 from db_read import resample_to
 
 from dynamic_kama import  anchored_momentum_via_kama
@@ -38,7 +38,7 @@ windowConfig = LHFrameStd.WindowConfig()
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 1700 + LIMIT_K_N_APPEND 
-TREND_LENGTH = 116000
+TREND_LENGTH = 216000
 # TREND_LENGTH = 2000
 LIMIT_K_N += TREND_LENGTH
 
@@ -117,7 +117,7 @@ def update_graph_1(n):
             src_col="close",
             len_er=200,
             fast=15,
-            slow2fast_times=2.0,
+            second2first_times=2.0,
             slow=1800,
             intervalP=0.01,
             minLen=10,
@@ -332,7 +332,7 @@ def update_graph_2(n):
             src_col="close",
             len_er=200,
             fast=15,
-            slow2fast_times=2.0,
+            second2first_times=2.0,
             slow=1800,
             intervalP=0.01,
             minLen=10,
@@ -551,7 +551,7 @@ def update_graph_2(n):
 #             src_col="close",
 #             len_er=200,
 #             fast=15,
-#             slow2fast_times=2.0,
+#             second2first_times=2.0,
 #             slow=1800,
 #             intervalP=0.01,
 #             minLen=10,

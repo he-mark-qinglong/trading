@@ -56,7 +56,7 @@ def update_graph(n):
         src_col="close",
         len_er=100,
         fast=24,
-        slow2fast_times=2.0,
+        second2first_times=2.0,
         slow=168,
         intervalP=0.01,
         minLen=10,
