@@ -134,7 +134,8 @@ class Portfolio:
                 'pnl': pnl
             }
             self.trade_log.append(record)
-            print(record)
+            if pnl != 0 :
+                print(record)
 
         return total_asset
 
@@ -190,7 +191,7 @@ class Strategy:
                 price_prepare = trend_df.iloc[-1]['kama1']
                 if self.multiVwap.SFrame_vwap_poc.iloc[-1] > trend_df.iloc[-1]['kama2']:
                     price_prepare = min(price_prepare, self.multiVwap.SFrame_vwap_poc.iloc[-1])
-                price_prepare = min(price_prepare, min(df['high'].iloc[-30:]))
+                price_prepare = min(price_prepare, min(df['low'].iloc[-90:]))
                 sig_long = OrderSignal('long', True, price_prepare, min_amount, order_type='limit', tier_explain="trend long kama1 entry")
             sig_short = None
 
@@ -201,7 +202,7 @@ class Strategy:
                 price_prepare = trend_df.iloc[-1]['kama1']
                 if self.multiVwap.SFrame_vwap_poc.iloc[-1] < trend_df.iloc[-1]['kama2']:
                     price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_poc.iloc[-1])
-                price_prepare = max(price_prepare, max(df['high'].iloc[-30:]))
+                price_prepare = max(price_prepare, max(df['high'].iloc[-90:]))
                 sig_short = OrderSignal('short', True, price_prepare, min_amount, order_type='limit', tier_explain="trend short kama1 entry")
             sig_long = None
 
@@ -287,19 +288,18 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
     position_amount_dict_sub = {'long':0, 'short':0}
 
 
-    no_signal_count_long = 0
-    no_signal_count_short = 0
+    no_signal_count_short,no_signal_count_long = 0, 0
     peak_value = -float('inf')  # 初始化峰值（回测开始时）
-    
-    for i in range(len(df)):
+
+    for i in range(0, len(df), 1):
         if i < 400:
             continue
         
         cur_index = df.index[i]
         if i % 1000 == 0:
             print(i, cur_index)
-            print('5m df time=', df['datetime'].iloc[i], '\t 15m kama time=', df_kama['datetime'].iloc[int(i/3)])
-            print('5m df close=', df['close'].iloc[i], '\t 15m kama close=', df_kama['close'].iloc[int(i/3)])
+            print('Dialog df not future function:5m df time=', df['datetime'].iloc[i], '\t 15m kama time=', df_kama['datetime'].iloc[int(i/3)])
+            print('Dialog df not future function:5m df close=', df['close'].iloc[i], '\t 15m kama close=', df_kama['close'].iloc[int(i/3)])
 
         cur_close = df.loc[cur_index, 'close']
         close = df.loc[cur_index, 'close']
@@ -339,6 +339,10 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                 position_amount_dict_sub['short'] = 0
             # 重置峰值，避免重复触发，可以根据策略需求决定是否重置
             peak_value = total_val  
+
+            #清空无信号计数器
+            no_signal_count_short, no_signal_count_long = 0, 0
+
         else:
             # ---- 平仓逻辑（以开仓信号反向，且持仓存在时一次性全平） ----
             # 先执行信号驱动的平仓
@@ -355,35 +359,47 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                 no_signal_count_short = 0
 
             # 然后执行无信号衰减逻辑
-            if no_signal_count_long >= 1000 and position_amount_dict_sub['long'] > 0:
-                reduce_amount = position_amount_dict_sub['long'] // 2
+            if no_signal_count_long >= (60/5) * 24 * 0.5 and position_amount_dict_sub['long'] > 0:
+                #衰减仓位时用position_amount_dict_sub['long'] // 2，减半处理合理，但如果仓位为1时会变0，导致永远无法衰减到0。
+                reduce_amount = 1 if position_amount_dict_sub['long'] == 1 else position_amount_dict_sub['long'] // 2
                 if reduce_amount > 0:
                     portfolio.update(cur_close, long_change=-reduce_amount, cur_time=cur_index, action='decay_long')
                     position_amount_dict_sub['long'] -= reduce_amount
                 no_signal_count_long = 0
 
-            if no_signal_count_short >= 1000 and position_amount_dict_sub['short'] > 0:
-                reduce_amount = position_amount_dict_sub['short'] // 2
+            if no_signal_count_short >= (60/5) * 24 * 0.5  and position_amount_dict_sub['short'] > 0:
+                #衰减仓位时用position_amount_dict_sub['long'] // 2，减半处理合理，但如果仓位为1时会变0，导致永远无法衰减到0。
+                reduce_amount = 1 if position_amount_dict_sub['short'] == 1 else position_amount_dict_sub['short'] // 2
                 if reduce_amount > 0:
                     portfolio.update(cur_close, short_change=-reduce_amount, cur_time=cur_index, action='decay_short')
                     position_amount_dict_sub['short'] -= reduce_amount
                 no_signal_count_short = 0
 
             # 多头开仓
-            maxh_short_condition = position_amount_dict_sub['long']*cur_close*portfolio.margin_rate < portfolio.get_total_value(cur_close)/10
+            maxh_short_condition = position_amount_dict_sub['long']*cur_close*portfolio.margin_rate < portfolio.get_total_value(cur_close)/5
             # maxh_short_condition = position_amount_dict_sub['long'] < 40
 
             if sig_long and sig_long.action and maxh_short_condition:
-                portfolio.update(sig_long.price, long_change=sig_long.amount, cur_time=cur_index, action='open_long')
-                position_amount_dict_sub['long'] += sig_long.amount
+                if sig_long.price > min(df.iloc[i:min(i+160, len(df))]['low']):
+                    portfolio.update(sig_long.price, long_change=sig_long.amount, cur_time=cur_index, action='open_long')
+                    position_amount_dict_sub['long'] += sig_long.amount
+                else:
+                    pass
+                    # print('++'*10,'long limit not touched')
 
             # 空头开仓
-            max_long_condition = position_amount_dict_sub['short']*cur_close*portfolio.margin_rate < portfolio.get_total_value(cur_close)/10
+            max_long_condition = position_amount_dict_sub['short']*cur_close*portfolio.margin_rate < portfolio.get_total_value(cur_close)/5
             # max_long_condition = position_amount_dict_sub['short'] < 40
 
             if sig_short and sig_short.action and max_long_condition:
-                portfolio.update(sig_short.price, short_change=sig_short.amount, cur_time=cur_index, action='open_short')
-                position_amount_dict_sub['short'] += sig_short.amount
+                if sig_short.price > max(df.iloc[i:min(i+160, len(df))]['high']):
+                    portfolio.update(sig_short.price, short_change=sig_short.amount, cur_time=cur_index, action='open_short')
+                    position_amount_dict_sub['short'] += sig_short.amount
+                else:
+                    pass
+                    # print('--'*10, 'short limit not touched')
+
+
 
         total_val = portfolio.get_total_value(cur_close)
         if cur_index is not None:
@@ -392,13 +408,14 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
             cur_time_dt = datetime.now()
 
         portfolio.history.append((cur_time_dt, total_val))
-    return portfolio
+
+    return portfolio, peak_value
 
 # 运行示例
 if __name__ == "__main__":
-    portfolio = backtest(client, usdt_init=10000, resample_period='5min')
+    portfolio,peak_value = backtest(client, usdt_init=10000, resample_period='5min')
 
-
+    print('peak_value', peak_value)
     # 假设你返回了portfolio对象，可以输出交易日志
     # for trade in portfolio.trade_log:
     #     print(trade)

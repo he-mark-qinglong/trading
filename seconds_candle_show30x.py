@@ -38,7 +38,7 @@ windowConfig = LHFrameStd.WindowConfig()
 
 LIMIT_K_N_APPEND = max(windowConfig.window_tau_s, 310)
 LIMIT_K_N = 1700 + LIMIT_K_N_APPEND 
-TREND_LENGTH = 216000
+TREND_LENGTH = 2160000
 # TREND_LENGTH = 2000
 LIMIT_K_N += TREND_LENGTH
 

@@ -2,6 +2,28 @@
 import pandas as pd
 import numpy as np
 
+def calculate_vwma(price, volume, period):
+    """
+    计算成交量加权移动平均（VWMA）
+
+    参数:
+        price: pd.Series 或 np.array，价格序列，如收盘价
+        volume: pd.Series 或 np.array，成交量序列
+        period: int，计算周期
+
+    返回:
+        pd.Series，VWMA序列
+    """
+    price = pd.Series(price)
+    volume = pd.Series(volume)
+
+    pv = price * volume
+    pv_sum = pv.rolling(window=period).sum()
+    vol_sum = volume.rolling(window=period).sum()
+
+    vwma = pv_sum / vol_sum
+    return vwma
+
 def compute_dynamic_kama(
     df: pd.DataFrame,
     src_col: str = 'close',
@@ -27,8 +49,10 @@ def compute_dynamic_kama(
     # 1. 预先 EWMA 衰减
     alpha = 1 - 2 ** (-1.0 / hl)
     src = src_orig.ewm(alpha=alpha, adjust=False).mean()
+    # src = calculate_vwma(src_orig, df['vol'].astype(float).reset_index(drop=True), 3)    ######这一行
     n = len(src)
-
+    # print('length of src=',n)
+    # print(src.head(10),'--------', src.tail(10))
     # Derived parameters
     len2   = int(len_er * second2first_times)
     fast2  = int(fast * second2first_times)
