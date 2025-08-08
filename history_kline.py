@@ -301,7 +301,7 @@ def main():
 
                 # 定义时间区间  
                 start_date = '2024-06-01'  
-                end_date = '2024-06-24'  
+                end_date = '2024-06-24' 
                 df = df.loc[start_date:end_date]  
                 rolled = df['volume'].rolling(24)
 
@@ -335,7 +335,7 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
     # timeframe = '1h'
     df = None
     for i in range(10):
-        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 500_000,
+        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 700_000,
                                        local_only=True
                                        )  
         if df.empty:
@@ -345,10 +345,10 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
         df['vol'] = df['volume']
         df['datetime'] = df.index
         break
-
+    df = df.iloc[-30_000:]
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
     # print(df.index[0], df.index[-1])
-    return df.iloc[-500_000:]
+    return  df
 
 if __name__ == "__main__":  
     # main()

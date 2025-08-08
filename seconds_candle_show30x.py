@@ -15,8 +15,8 @@ import LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
-from db_read import read_and_sort_df
-# from history_kline import read_and_sort_df
+# from db_read import read_and_sort_df
+from history_kline import read_and_sort_df
 from db_read import resample_to
 
 from dynamic_kama import  anchored_momentum_via_kama
@@ -71,6 +71,52 @@ app.layout = html.Div([
     # make_kline_section(3),
 ])
 
+
+# --- 新增的封装函数，放在文件顶部或合适位置 ---
+def add_trade_signals_to_fig(fig, trade_df, row=1, col=1):
+    if trade_df is None or trade_df.empty:
+        return
+
+    # 多头开仓
+    mask_open_long = trade_df['action'].str.contains('open_long', na=False)
+    fig.add_trace(go.Scatter(
+        x=trade_df.index[mask_open_long],
+        y=trade_df.loc[mask_open_long, 'price'],
+        mode='markers',
+        marker=dict(symbol='triangle-up', size=15, color='green'),
+        name='Open Long'
+    ), row=row, col=col)
+
+    # 多头平仓
+    mask_close_long = trade_df['action'].str.contains('close_long|stop_loss_long|decay_long', na=False)
+    fig.add_trace(go.Scatter(
+        x=trade_df.index[mask_close_long],
+        y=trade_df.loc[mask_close_long, 'price'],
+        mode='markers',
+        marker=dict(symbol='triangle-down', size=15, color='red'),
+        name='Close Long'
+    ), row=row, col=col)
+
+    # 空头开仓
+    mask_open_short = trade_df['action'].str.contains('open_short', na=False)
+    fig.add_trace(go.Scatter(
+        x=trade_df.index[mask_open_short],
+        y=trade_df.loc[mask_open_short, 'price'],
+        mode='markers',
+        marker=dict(symbol='triangle-down', size=15, color='blue'),
+        name='Open Short'
+    ), row=row, col=col)
+
+    # 空头平仓
+    mask_close_short = trade_df['action'].str.contains('close_short|stop_loss_short|decay_short', na=False)
+    fig.add_trace(go.Scatter(
+        x=trade_df.index[mask_close_short],
+        y=trade_df.loc[mask_close_short, 'price'],
+        mode='markers',
+        marker=dict(symbol='triangle-up', size=15, color='orange'),
+        name='Close Short'
+    ), row=row, col=col)
+
 @app.callback(
     Output("kline-graph-1", "figure"),
     Output("status-msg-1", "children"),
@@ -101,7 +147,7 @@ def update_graph_1(n):
         start = multiVwap.SFrame_vwap_poc.first_valid_index()
         if start is None:
             return go.Figure(), "暂无有效数据"
-        df = df.loc[start:].copy()
+        # df = df.loc[start:].copy()
         # 对 multiVwap 系列做同样截断
         for var in vars(multiVwap):
             ser = getattr(multiVwap, var)
@@ -126,7 +172,7 @@ def update_graph_1(n):
         )
         before = time.time()
         df_kama = compute_dynamic_kama(df, **kama_params)
-        df_kama.reindex()
+        # df_kama.reindex()
         
         print("compute_dynamic_kama-1 takes time:", time.time() - before)
 
@@ -149,9 +195,9 @@ def update_graph_1(n):
         for name, color in {
             **{k:'purple'      for k in ["SFrame_vwap_poc"]},
             # **{k:'deeppink'    for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
-            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
-            **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
+            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
+            # **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
             **{k:'black'        for k in ["SFrame_center"]},
             **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
             **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},
@@ -204,6 +250,13 @@ def update_graph_1(n):
             fillcolor='rgba(255,0,0,0.2)',
             line=dict(width=0), name="KAMA1<KAMA2"
         ), row=1, col=1)
+
+
+        # 这里插入交易信号叠加
+        from trade_log_manager import TradeLogManager
+        manager = TradeLogManager(base_path='./my_trade_data')
+        trade_df = manager.load_trade_log(exchange_id='okx', symbol='ETH/USDT', timeframe='5min')
+        add_trade_signals_to_fig(fig, trade_df, row=1, col=1)
 
         # (B) 行 2: 成交量柱 + 通道
         vol_df = multiVwap.vol_df.loc[df.index]
@@ -344,7 +397,6 @@ def update_graph_2(n):
         
         df_kama = compute_dynamic_kama(df, **kama_params)
         
-        
         print("compute_dynamic_kama-2 takes time:", time.time() - before)
 
         # --- 2. 子图：3 行 ---
@@ -366,9 +418,9 @@ def update_graph_2(n):
         for name, color in {
             **{k:'purple'      for k in ["SFrame_vwap_poc"]},
             # **{k:'deeppink'    for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
-            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
-            **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
+            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
+            # **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
             **{k:'black'        for k in ["SFrame_center"]},
             **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
             **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},

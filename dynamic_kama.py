@@ -2,6 +2,41 @@
 import pandas as pd
 import numpy as np
 
+import pandas as pd
+
+def convert_to_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    将传统OHLCV数据转换为Heikin Ashi格式。
+
+    参数:
+        df: 包含普通OHLCV数据的DataFrame，列名包含 ['open', 'high', 'low', 'close', 'volume']
+
+    返回:
+        heikin_ashi_df: 包含Heikin Ashi OHLCV数据的DataFrame，索引与df相同
+    """
+    ha_df = pd.DataFrame(index=df.index, columns=['datetime', 'open', 'high', 'low', 'close', 'vol'])
+
+    # 计算Heikin Ashi Close：各价格均值
+    ha_df['close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+
+    # 初始化Heikin Ashi Open，第一根bar取普通开盘价，后续用前一根heikin ashi开盘与收盘均值
+    ha_df.iloc[0, ha_df.columns.get_loc('open')] = df.iloc[0]['open']
+
+    for i in range(1, len(df)):
+        ha_df.iloc[i, ha_df.columns.get_loc('open')] = (ha_df.iloc[i-1]['open'] + ha_df.iloc[i-1]['close']) / 2
+
+    # Heikin Ashi High：取当期普通最高价、HA开盘价、HA收盘价中最大值
+    ha_df['high'] = pd.concat([df['high'], ha_df['open'], ha_df['close']], axis=1).max(axis=1)
+
+    # Heikin Ashi Low：取当期普通最低价、HA开盘价、HA收盘价中最小值
+    ha_df['low'] = pd.concat([df['low'], ha_df['open'], ha_df['close']], axis=1).min(axis=1)
+
+    # 音量一般保持不变，直接复制原数据
+    ha_df['vol'] = df['vol']
+
+    return ha_df
+
+
 def calculate_vwma(price, volume, period):
     """
     计算成交量加权移动平均（VWMA）
@@ -43,12 +78,14 @@ def compute_dynamic_kama(
       - dynLen1, dynLen2 : adaptive ER window lengths
       - kama1, kama2     : the two KAMA series
     """
+    # df = convert_to_heikin_ashi(df=df)
     src_orig = df[src_col].astype(float).reset_index(drop=True)
     n = len(src_orig)
 
     # 1. 预先 EWMA 衰减
     alpha = 1 - 2 ** (-1.0 / hl)
     src = src_orig.ewm(alpha=alpha, adjust=False).mean()
+    # src = src_orig
     # src = calculate_vwma(src_orig, df['vol'].astype(float).reset_index(drop=True), 3)    ######这一行
     n = len(src)
     # print('length of src=',n)
@@ -111,7 +148,7 @@ def compute_dynamic_kama(
         kama2[i] = kama2[i-1] + sc2 * (src.iloc[i] - kama2[i-1])
 
     # attach to DataFrame
-    out = df.copy().reset_index()
+    out = df.copy(deep=True)
     
     out['dynLen1'] = dynLen1
     out['dynLen2'] = dynLen2

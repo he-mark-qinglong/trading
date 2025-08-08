@@ -89,6 +89,7 @@ class MultiTFvp_poc:
         idx = df_block.index
         slow_arr3, shigh_arr3 = fbS3.result()
         slow_arr2, shigh_arr2 = fbS2.result()
+        assert len(svp) == len(idx) and  len(slow_arr3) == len(idx) and  len(shigh_arr3) == len(idx), 'heavy result length not equal to df'
         return {
             'S':     pd.Series(svp,           index=idx),
             'slow3':  pd.Series(slow_arr3,      index=idx),
@@ -208,6 +209,9 @@ class MultiTFvp_poc:
         self.SFrame_vwap_down_getin  = rma_s(s_low2)  #s_low2 > slow
         self.SFrame_vwap_down_sl     = rma_s(slow - (s_low2 - slow))
         self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (s_low2 - slow))
+
+        self.SFrame_vwap_down_sl2.reindex(self.df.index)
+        self.SFrame_vwap_up_sl2.reindex(self.df.index)
 
     def calculate_SFrame_vwap_poc_and_std(self, coin_date_df, debug=False):
         """
