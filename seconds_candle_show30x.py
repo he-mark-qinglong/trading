@@ -251,7 +251,7 @@ def update_graph_1(n):
 
 
         # 这里插入交易信号叠加
-        from trade_log_manager import TradeLogManager
+        from strategy_logs import TradeLogManager
         manager = TradeLogManager(base_path='./my_trade_data')
         trade_df = manager.load_trade_log(exchange_id='okx', symbol='ETH/USDT', timeframe='5min')
         add_trade_signals_to_fig(fig, trade_df, row=1, col=1)

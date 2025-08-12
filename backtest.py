@@ -1,21 +1,20 @@
 import pandas as pd
 import numpy as np
-import time
+from datetime import datetime, timedelta
 
 # 假设你已有的模块和函数路径正确
 from indicators import compute_dynamic_kama, anchored_momentum_via_kama
-# multiVwap 计算相关，请确保可调用
-# data 相关，read_and_sort_df, resample_to 可使用
-from datetime import datetime, timedelta
-
+from strategy import Strategy, OrderSignal
 import indicators as LHFrameStd
-# from yyyyy2_okx_5m import trade_coin
+from db_read import resample_to
+
+
 
 from db_client import SQLiteWALClient
 # from db_read import read_and_sort_df
 from history_kline import read_and_sort_df
-# from history_kline import read_and_sort_df
-from db_read import resample_to
+
+
 symbol = "ETH-USDT-SWAP"
 
 DEBUG = False
@@ -34,16 +33,6 @@ TREND_LENGTH = 116000
 LIMIT_K_N += TREND_LENGTH
 
 
-
-class OrderSignal:
-    def __init__(self, side, action, price, amount, order_type="limit", order_time=None, tier_explain=""):
-        self.side = side
-        self.action = action
-        self.price = price
-        self.amount = amount
-        self.order_type = order_type
-        self.order_time = order_time
-        self.tier_explain = tier_explain
 class Portfolio:
     def __init__(self, init_cash, margin_rate=0.05):
         self.fee_rate = 15/10000
@@ -95,7 +84,7 @@ class Portfolio:
             close_amount = -long_change
             if close_amount > self.position_long:
                 close_amount = self.position_long
-            rpnl = (price - self.avg_price_long) * close_amount
+            rpnl = (price - self.avg_price_long) * close_amount  * (1 - self.fee_rate)
             self.position_long -= close_amount
             margin_return = self.avg_price_long * close_amount * self.margin_rate
             self.cash += margin_return + rpnl
@@ -129,7 +118,7 @@ class Portfolio:
             close_amount = -short_change
             if close_amount > self.position_short:
                 close_amount = self.position_short
-            rpnl = (self.avg_price_short - price) * close_amount
+            rpnl = (self.avg_price_short - price) * close_amount * (1 - self.fee_rate)
             self.position_short -= close_amount
             margin_return = self.avg_price_short * close_amount * self.margin_rate
             self.cash += margin_return + rpnl
@@ -178,106 +167,6 @@ class Portfolio:
         upnl_short = (self.avg_price_short - price) * self.position_short if self.position_short > 0 else 0
         return self.cash + self.margin + upnl_long + upnl_short
 
-    
-def get_trend_signal(trend_df, multiVwap, window=200):
-    kama_delta = trend_df['kama1'] - trend_df['kama2']
-    sum_delta = kama_delta.iloc[-window:].sum()
-    if trend_df.iloc[-1]['kama1'] > trend_df.iloc[-1]['kama2'] and sum_delta > 0:
-        return 'long'
-    elif trend_df.iloc[-1]['kama1'] < trend_df.iloc[-1]['kama2'] and sum_delta < 0:
-        return 'short'
-    else:
-        return 'neutral'
-
-class Strategy:
-    def __init__(self, multiVwap:LHFrameStd.MultiTFVWAP, can_open_total):
-        self.multiVwap = multiVwap
-        self.can_open_total = can_open_total
-        self.open_orders = {'long': None, 'short': None}
-        self.eval_history = []
-        self.strategy_log_interval = 0
-
-    def cancel_order(self, side):
-        self.open_orders[side] = None
-
-    def clear_order(self, side):
-        self.open_orders[side] = None
-
-    def should_cancel(self, side):
-        # 简单撤单：比如订单挂单超过固定时间可撤(示例里恒False)
-        return False
-
-    def evaluate(self, side, cur_close, close, multiFrameVwap, open2equity_pct):
-        # 这里您的震荡策略逻辑入口，需要你补充细化
-        # 返回 OrderSignal 或 None
-        return None
-
-    def generate_order_signals(self, trend_df, df, cur_index, closes, position_amount_dict_sub, min_amount = 2):
-        cur_close = df.loc[cur_index, 'close']
-        sig_long, sig_short = None, None
-        all_values = sum(position_amount_dict_sub.values())
-        open2equity_pct = all_values / self.can_open_total
-        trend = get_trend_signal(trend_df, self.multiVwap)
-        
-        #两种touch是回溯的，所以谁先是True代表谁有效--也就是break之后的那个就是最近触及的那个sl。
-        touched_down = False
-        touched_up = False
-        for i in range(len(df)-1, len(df)-300, -1):
-            index = df.index[i]
-            down_sl2 = self.multiVwap.SFrame_vwap_down_sl2.loc[index]
-            up_sl2 = self.multiVwap.SFrame_vwap_up_sl2.loc[index]
-
-            if df.loc[index]['close'] <= down_sl2:
-                touched_down = True
-                break
-            if df.loc[index]['close'] >= up_sl2:
-                touched_up = True
-                break
-
-        if True and trend == 'long':
-            if touched_down:
-                min_amount *= 2
-        
-            self.cancel_order('long')
-            self.clear_order('long')
-            if open2equity_pct < 0.05:# and df.loc[cur_index]['low'] <= self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index]:
-                price_prepare = trend_df['kama1'].iloc[-1]
-                price_prepare = min(price_prepare, min(df['low'].iloc[-90:]))
-                price_prepare = min(price_prepare, self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index]) - self.multiVwap.atr_dic['ATR'].loc[cur_index]/2
-                assert self.multiVwap.df.loc[cur_index]['close'] == closes.iloc[-1], f"self.multiVwap.df[cur_index]['close'] == closes[-1] is false {self.multiVwap.df[cur_index]['close']} {closes.iloc[-1]}"
-
-                sig_long = OrderSignal('long', True, price_prepare, min_amount, order_type='limit', tier_explain="trend long kama1 entry")
-            sig_short = None
-
-        elif True and trend == 'short':
-            if touched_up:
-                min_amount *= 2
-            self.cancel_order('short')
-            self.clear_order('short')
-            if open2equity_pct < 0.05:# and df.loc[cur_index]['high'] >= self.multiVwap.SFrame_vwap_up_sl2.loc[cur_index]:
-                price_prepare = trend_df['kama1'].iloc[-1]
-                # if self.multiVwap.SFrame_vwap_poc.iloc[-1] < trend_df.loc[cur_index, 'kama2']:
-                #     price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_poc.iloc[-1])
-                price_prepare = max(price_prepare, max(df['high'].iloc[-90:]))
-                price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_up_sl2.loc[cur_index]) + self.multiVwap.atr_dic['ATR'].loc[cur_index]/2
-                sig_short = OrderSignal('short', True, price_prepare, min_amount, order_type='limit', tier_explain="trend short kama1 entry")
-            sig_long = None
-
-        else:
-            # print('moderating, no trend')
-            # 震荡区间
-            for side in ('long', 'short'):
-                if self.should_cancel(side):
-                    self.cancel_order(side)
-                    self.clear_order(side)
-            sig_short = self.evaluate('short', cur_close, closes, self.multiVwap, open2equity_pct)
-            if sig_short:
-                sig_short.price = max(sig_short.price, max(df['high'].iloc[-30:]))
-            sig_long  = self.evaluate('long',  cur_close, closes, self.multiVwap, open2equity_pct)
-            if sig_long:
-                sig_long.price = min(sig_long.price, min(df['low'].iloc[-30:]))
-        # print(f'generated {sig_long}, \t {sig_short}')
-        return sig_long, sig_short
 
 
 def backtest(client, usdt_init=10000, resample_period='5min'):
@@ -386,6 +275,8 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
 
         
         strategy = Strategy(multiVwap, portfolio.cash/cur_close/portfolio.margin_rate)
+        sig_long: OrderSignal
+        sig_short: OrderSignal
         sig_long, sig_short = strategy.generate_order_signals(kama_slice, df_slice, cur_index, closes, position_amount_dict_sub, min_amount=min_amount)
 
         # 判断是否有开仓信号
@@ -458,7 +349,7 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
             # 先执行信号驱动的平仓
             if sig_short and sig_short.action and position_amount_dict_sub['long'] > 0:
                 future_highs = df.iloc[i+1:min(i+160, len(df))]['high']
-                if sig_short.price > max(future_highs):
+                if sig_short.price <= max(future_highs):
                     sell_price = sig_short.price
                     portfolio.update(sell_price, long_change=-position_amount_dict_sub['long'], cur_time=cur_index, action='close_long')
                     position_amount_dict_sub['long'] = 0
@@ -468,7 +359,7 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
 
             if sig_long and sig_long.action and position_amount_dict_sub['short'] > 0:
                 future_lows = df.iloc[i+1:min(i+160, len(df))]['low']
-                if sig_long.price > min(future_lows):
+                if sig_long.price >= min(future_lows):
                     buy_price = sig_long.price
 
                     portfolio.update(buy_price, short_change=-position_amount_dict_sub['short'], cur_time=cur_index, action='close_short')
@@ -560,101 +451,18 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
 
         portfolio.history.append((cur_time_dt, total_val))
 
-    return portfolio, peak_value
-
-
-import matplotlib.pyplot as plt
-
-# # 运行示例
-# if __name__ == "__main__":
-#     portfolio,peak_value = backtest(client, usdt_init=10000, resample_period='5min')
-
-#     print('peak_value', peak_value)
-#     # 假设你返回了portfolio对象，可以输出交易日志
-#     # for trade in portfolio.trade_log:
-#     #     print(trade)
-#     import pandas as pd
-
-#     trade_df = pd.DataFrame(portfolio.trade_log)
-#     trade_df.to_csv('trade_log.csv', index=False)
-    
-#     
-#     # 转换成 DataFrame，设置时间索引
-#     df_history = pd.DataFrame(portfolio.history, columns=['datetime', 'total_asset'])
-#     df_history.set_index('datetime', inplace=True)
-
-#     # 绘制曲线，matplotlib 和 pandas 配合很方便
-#     df_history['total_asset'].plot()
-
-#     plt.title('Backtest Account Equity')
-#     plt.xlabel('Time')
-#     plt.ylabel('Total Asset')
-#     plt.grid(True)
-#     plt.show()
-
-def render_trades_with_price(df_price, manager):
-    trade_df = manager.load_trade_log(exchange_id='okx', symbol='ETH/USDT', timeframe='5min')
-
-    # 确保索引是datetime
-    if not pd.api.types.is_datetime64_any_dtype(df_price.index):
-        df_price.index = pd.to_datetime(df_price.index)
-    if not pd.api.types.is_datetime64_any_dtype(trade_df.index):
-        trade_df.index = pd.to_datetime(trade_df.index)
-
-    plt.figure(figsize=(14*3, 7))
-    plt.plot(df_price.index, df_price['close'], label='Close Price', lw=1)
-
-    # 直接用交易日志时间点，找对应价格绘制信号
-    def get_price_at_trade_times(trade_times):
-        # 对应价格用行情数据重采样或最近时间点价格
-        return df_price['close'].reindex(trade_times, method='nearest')
-
-    # 多头开仓
-    open_long_mask = trade_df['action'].str.contains('open_long', na=False)
-    open_long_times = trade_df.index[open_long_mask]
-    plt.scatter(open_long_times, get_price_at_trade_times(open_long_times),
-                marker='^', color='g', label='Open Long', s=30)
-
-    # 多头平仓
-    close_long_mask = trade_df['action'].str.contains('close_long|stop_loss_long|decay_long', na=False)
-    close_long_times = trade_df.index[close_long_mask]
-    print('count of close long:', len(close_long_times))
-    plt.scatter(close_long_times, get_price_at_trade_times(close_long_times),
-                marker='v', color='r', label='Close Long', s=30)
-
-    # 空头开仓
-    open_short_mask = trade_df['action'].str.contains('open_short', na=False)
-    open_short_times = trade_df.index[open_short_mask]
-    plt.scatter(open_short_times, get_price_at_trade_times(open_short_times),
-                marker='^', color='blue', label='Open Short', s=30)
-
-    # 空头平仓
-    close_short_mask = trade_df['action'].str.contains('close_short|stop_loss_short|decay_short', na=False)
-    close_short_times = trade_df.index[close_short_mask]
-    print('count of close short:', len(close_short_times))
-    plt.scatter(close_short_times, get_price_at_trade_times(close_short_times),
-                marker='v', color='orange', label='Close Short', s=30)
-
-    plt.title('Price and Trade Signals')
-    plt.xlabel('Time')
-    plt.ylabel('Price')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    return df, portfolio, peak_value
 
 
 
-import pandas as pd
-from trade_log_manager import TradeLogManager
+from strategy_viz import render_equity_change, render_trades_with_price
+from strategy_logs import TradeLogManager
 
 # 使用示例：
 if __name__ == '__main__':
     # 假设 backtest 已经跑完，portfolio 和 df 是你的回测结果和行情数据
     # trade_log 存在 portfolio.trade_log 里面
-    portfolio, peak_value = backtest(client, usdt_init=10000, resample_period='5min')
-
-    df_raw = read_and_sort_df(client, LIMIT_K_N)
-    df = resample_to(df_raw, '5min')
+    df, portfolio, peak_value = backtest(client, usdt_init=10000, resample_period='5min')
     df.index = pd.to_datetime(df.index, unit='s')
 
     # 假设 portfolio.trade_log 是你的交易记录列表（字典列表）
@@ -663,16 +471,7 @@ if __name__ == '__main__':
     # 保存交易日志
     manager.save_trade_log(exchange_id='okx', symbol='ETH/USDT', timeframe='5min', trade_log=portfolio.trade_log)
 
-    # render_trades_with_price(df, manager)
-
-    # 转换成 DataFrame，设置时间索引
-    df_history = pd.DataFrame(portfolio.history, columns=['datetime', 'total_asset'])
-    df_history.set_index('datetime', inplace=True)
-    # 绘制曲线，matplotlib 和 pandas 配合很方便
-    df_history['total_asset'].plot()
-
-    plt.title('Backtest Account Equity')
-    plt.xlabel('Time')
-    plt.ylabel('Total Asset')
-    plt.grid(True)
-    plt.show()
+    render_trades_with_price(df, manager)
+    # render_equity_change(portfolio.history)
+    
+    
