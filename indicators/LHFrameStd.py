@@ -17,7 +17,7 @@ class WindowConfig:
         self.window_tau_h = int(120*self.febonaqis[0])     #8h = 1h x 12, 5x24 == 120
         self.window_tau_l = int(24*self.febonaqis[0])   #1h = 2.5m x 24
 
-class MultiTFvp_poc:
+class MultiTFVWAP:
     def __init__(self,
                  lambd=0.03,
                  window_LFrame=12,
@@ -210,8 +210,9 @@ class MultiTFvp_poc:
         self.SFrame_vwap_down_sl     = rma_s(slow - (s_low2 - slow))
         self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (s_low2 - slow))
 
-        self.SFrame_vwap_down_sl2.reindex(self.df.index)
-        self.SFrame_vwap_up_sl2.reindex(self.df.index)
+        self.SFrame_vwap_poc.reindex(self.df.index, method='ffill')
+        self.SFrame_vwap_down_sl2.reindex(self.df.index, method='ffill')
+        self.SFrame_vwap_up_sl2.reindex(self.df.index, method='ffill')
 
     def calculate_SFrame_vwap_poc_and_std(self, coin_date_df, debug=False):
         """
@@ -229,6 +230,7 @@ class MultiTFvp_poc:
         self.momentum_df = self.anchored_momentum()
 
         self.atr_dic = self.calc_atr()
+        self.atr_dic['ATR'].reindex(self.df.index,  method='ffill')
 
     # 1) volume核心指标计算
     def compute_volume_channels(self, df: pd.DataFrame, 

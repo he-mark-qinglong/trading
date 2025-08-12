@@ -31,7 +31,7 @@ import builtins
 from db_client import SQLiteWALClient
 from db_read import read_and_sort_df
 from multi_frame_vwap_strategy import MultiFramePOCStrategy, RuleConfig,  weakLongRuleConfig, OrderSignal
-from dynamic_kama import compute_dynamic_kama
+from indicators import compute_dynamic_kama
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='my.log', level=logging.INFO, format=LOG_FORMAT)
@@ -41,7 +41,7 @@ ABSPATH=os.path.abspath(sys.argv[0])
 ABSPATH=os.path.dirname(ABSPATH)+"/"
 flag='0'
 
-from LHFrameStd import MultiTFvp_poc, WindowConfig
+from indicators.LHFrameStd import MultiTFVWAP, WindowConfig
 from plot_mtf import  plot_all_multiftfpoc_vars, plot_liquidation_vp
 
 windowConfig = WindowConfig()
@@ -98,7 +98,7 @@ class trade_coin(object):
         self.client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
         self.coin_data = self.get_kline(init=True)
 
-        self.multiFrameVwap = MultiTFvp_poc(window_LFrame=windowConfig.window_tau_l, 
+        self.multiFrameVwap = MultiTFVWAP(window_LFrame=windowConfig.window_tau_l, 
                                         window_HFrame=windowConfig.window_tau_h, 
                                         window_SFrame=windowConfig.window_tau_s)
         # self.multiFrameVwap.calculate_SFrame_vwap_poc_and_std(self.coin_data, DEBUG)

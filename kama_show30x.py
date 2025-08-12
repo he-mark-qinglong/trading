@@ -10,11 +10,11 @@ from dash.dependencies import Input, Output
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-import LHFrameStd
+import indicators as LHFrameStd
 from db_client import SQLiteWALClient
 from db_read import read_and_sort_df
 
-from dynamic_kama import compute_dynamic_kama
+from indicators import compute_dynamic_kama
 
 BASIC_INTERVAL = 5
 use30x = True

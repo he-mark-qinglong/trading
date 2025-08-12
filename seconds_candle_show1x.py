@@ -10,7 +10,7 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-import LHFrameStd
+import indicators.LHFrameStd as LHFrameStd
 from yyyyy2_okx_5m import trade_coin
 from db_client import SQLiteWALClient
 
@@ -35,7 +35,7 @@ client = SQLiteWALClient(db_path=DB_PATH,
 trade_client = None
 
 windowConfig = LHFrameStd.WindowConfig()
-multiVwap = LHFrameStd.MultiTFvp_poc(
+multiVwap = LHFrameStd.MultiTFVWAP(
     window_LFrame=windowConfig.window_tau_l,
     window_HFrame=windowConfig.window_tau_h,
     window_SFrame=windowConfig.window_tau_s

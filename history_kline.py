@@ -345,7 +345,7 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
         df['vol'] = df['volume']
         df['datetime'] = df.index
         break
-    df = df.iloc[-30_000:]
+    df = df.iloc[-50_000:]
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
     # print(df.index[0], df.index[-1])
     return  df

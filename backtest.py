@@ -3,14 +3,12 @@ import numpy as np
 import time
 
 # 假设你已有的模块和函数路径正确
-from dynamic_kama import compute_dynamic_kama, anchored_momentum_via_kama
+from indicators import compute_dynamic_kama, anchored_momentum_via_kama
 # multiVwap 计算相关，请确保可调用
 # data 相关，read_and_sort_df, resample_to 可使用
 from datetime import datetime, timedelta
 
-
-
-import LHFrameStd
+import indicators as LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
@@ -48,6 +46,7 @@ class OrderSignal:
         self.tier_explain = tier_explain
 class Portfolio:
     def __init__(self, init_cash, margin_rate=0.05):
+        self.fee_rate = 15/10000
         self.cash = init_cash      # 可用现金
         self.margin = 0.0          # 冻结保证金
         self.position_long = 0
@@ -60,19 +59,36 @@ class Portfolio:
         
         self.total_asset = init_cash
 
+    def upnl(self, price):
+        upnl_long  = (price - self.avg_price_long)  * self.position_long if self.position_long  > 0 else 0.0
+        upnl_short = (self.avg_price_short - price) * self.position_short if self.position_short > 0 else 0.0
+        return upnl_long + upnl_short
+
+    def free_margin(self, price):
+        # 全仓：可用保证金 = 现金 + 未实现盈亏（初始保证金已从现金锁定到 self.margin）
+        return self.cash + self.upnl(price)
+
     def update(self, price, long_change=0, short_change=0, cur_time=None, action=None):
         rpnl = 0  # 已实现盈亏（平仓时生效）
 
         if long_change > 0:
-            cost = price * long_change * self.margin_rate
-            # print(f"[try open long] price: {price}, amount: {long_change}, cost: {cost}, cash_available: {self.cash}")
-            if self.cash >= cost:
+            fee_rate = getattr(self, "fee_rate", 0.0)  # 若无手续费，可不设置或设为0
+            cost = price * long_change * self.margin_rate   # 初始保证金（固定锁定）
+            fee  = price * long_change * fee_rate           # 手续费（可选）
+            free = self.free_margin(price)
+            need = cost + fee
+
+            if free >= need:
+                prev = self.position_long
                 self.position_long += long_change
-                self.avg_price_long = (self.avg_price_long * (self.position_long - long_change) + price * long_change) / self.position_long
-                self.cash -= cost
+                # 加权平均开仓价（用于后续UPnL；保证金基数也随均价/仓位变化）
+                self.avg_price_long = ((self.avg_price_long * prev) + price * long_change) / self.position_long
+
+                # 记账：锁定保证金到 margin（固定），现金扣除 保证金+手续费
+                self.cash   -= need
                 self.margin += cost
             else:
-                print(f'Cash not enough for {action} (long): required {cost}, available {self.cash}')
+                print(f'Free margin not enough for {action} (long): need {need:.3f}, free={free:.3f}')
                 return self.get_total_value(price)
 
         elif long_change < 0:  # 平多头仓
@@ -84,19 +100,29 @@ class Portfolio:
             margin_return = self.avg_price_long * close_amount * self.margin_rate
             self.cash += margin_return + rpnl
             self.margin -= margin_return
+
             if self.position_long == 0:
                 self.avg_price_long = 0.0
 
-        elif short_change > 0:
-            cost = price * short_change * self.margin_rate
-            # print(f"[try open short] price: {price}, amount: {short_change}, cost: {cost}, cash_available: {self.cash}")
-            if self.cash >= cost:
+        if short_change > 0:
+            # 可选：手续费
+            fee_rate = getattr(self, "fee_rate", 0.0)
+            cost = price * short_change * self.margin_rate         # 初始保证金（固定锁定）
+            fee  = price * short_change * fee_rate                 # 手续费（若有）
+
+            free = self.free_margin(price)
+            need = cost + fee
+            if free >= need:
+                prev = self.position_short
                 self.position_short += short_change
-                self.avg_price_short = (self.avg_price_short * (self.position_short - short_change) + price * short_change) / self.position_short
-                self.cash -= cost
+                # 加权平均开仓价（用于计算UPnL；注意：均价改变 => 未来“固定保证金”的基数也随之改变）
+                self.avg_price_short = ((self.avg_price_short * prev) + price * short_change) / self.position_short
+
+                # 记账：锁定保证金到 margin（固定），现金扣除保证金+手续费
+                self.cash   -= need
                 self.margin += cost
             else:
-                print(f'Cash not enough for {action} (short): required {cost}, available {self.cash}')
+                print(f'Free margin not enough for {action} (short): need {need:.3f}, free={free:.3f}')
                 return self.get_total_value(price)
 
         elif short_change < 0:  # 平空头仓
@@ -131,7 +157,7 @@ class Portfolio:
                 'datetime': cur_time_dt,
                 'action': action,
                 'price': round(price, 3),
-                'amount': long_change if long_change != 0 else short_change,
+                'amount': round(long_change if long_change != 0 else short_change, 2),
                 'position_long': round(self.position_long, 2),
                 'position_short': round(self.position_short, 2),
                 'cash': round(self.cash, 3),
@@ -164,7 +190,7 @@ def get_trend_signal(trend_df, multiVwap, window=200):
         return 'neutral'
 
 class Strategy:
-    def __init__(self, multiVwap:LHFrameStd, can_open_total):
+    def __init__(self, multiVwap:LHFrameStd.MultiTFVWAP, can_open_total):
         self.multiVwap = multiVwap
         self.can_open_total = can_open_total
         self.open_orders = {'long': None, 'short': None}
@@ -192,46 +218,40 @@ class Strategy:
         all_values = sum(position_amount_dict_sub.values())
         open2equity_pct = all_values / self.can_open_total
         trend = get_trend_signal(trend_df, self.multiVwap)
+        
+        #两种touch是回溯的，所以谁先是True代表谁有效--也就是break之后的那个就是最近触及的那个sl。
+        touched_down = False
+        touched_up = False
+        for i in range(len(df)-1, len(df)-300, -1):
+            index = df.index[i]
+            down_sl2 = self.multiVwap.SFrame_vwap_down_sl2.loc[index]
+            up_sl2 = self.multiVwap.SFrame_vwap_up_sl2.loc[index]
+
+            if df.loc[index]['close'] <= down_sl2:
+                touched_down = True
+                break
+            if df.loc[index]['close'] >= up_sl2:
+                touched_up = True
+                break
 
         if True and trend == 'long':
+            if touched_down:
+                min_amount *= 2
+        
             self.cancel_order('long')
             self.clear_order('long')
             if open2equity_pct < 0.05:# and df.loc[cur_index]['low'] <= self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index]:
                 price_prepare = trend_df['kama1'].iloc[-1]
-                # if self.multiVwap.SFrame_vwap_poc.loc[cur_index] > trend_df.loc[cur_index, 'kama2']:
-                #     price_prepare = min(price_prepare, self.multiVwap.SFrame_vwap_poc.loc[cur_index])
                 price_prepare = min(price_prepare, min(df['low'].iloc[-90:]))
-                price_prepare = min(price_prepare, self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index])
-                if 0:
-                    index_list = self.multiVwap.df.index
-
-                    # 假设 index_list 是已排序的 DatetimeIndex，且长度 n
-                    # 我们找出 cur_index 在 index_list 中的插入位置
-
-                    import bisect  # 标准库用来二分查找索引插入点
-
-                    pos = bisect.bisect_left(index_list, cur_index)  # 找到插入位置，0 <= pos <= len(index_list)
-
-                    if pos == 0:
-                        # cur_index 小于等于第一个元素
-                        print("cur_index is before the first index element:", cur_index, "position 0")
-                    elif pos == len(index_list):
-                        # cur_index 大于所有元素，插入在末尾
-                        print("cur_index is after the last index element:", cur_index, "position", pos)
-                    else:
-                        # cur_index 在 index_list[pos-1] 和 index_list[pos] 之间
-                        print("cur_index lies between:", index_list[pos-1], cur_index, index_list[pos])
-                        print(f"self.multiVwap.df[pos]['close']={self.multiVwap.df.iloc[pos]['close']}")
-                        print(f"self.multiVwap.df[cur_index]['close']={self.multiVwap.df.loc[cur_index]['close']}")
-                        print('SFrame_vwap_down_sl2[cur_index]:', self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index]) 
-
-                    print(f"self.multiVwap.df[cur_index]['close']:{self.multiVwap.df.loc[cur_index]['close']}")
+                price_prepare = min(price_prepare, self.multiVwap.SFrame_vwap_down_sl2.loc[cur_index]) - self.multiVwap.atr_dic['ATR'].loc[cur_index]/2
                 assert self.multiVwap.df.loc[cur_index]['close'] == closes.iloc[-1], f"self.multiVwap.df[cur_index]['close'] == closes[-1] is false {self.multiVwap.df[cur_index]['close']} {closes.iloc[-1]}"
 
                 sig_long = OrderSignal('long', True, price_prepare, min_amount, order_type='limit', tier_explain="trend long kama1 entry")
             sig_short = None
 
         elif True and trend == 'short':
+            if touched_up:
+                min_amount *= 2
             self.cancel_order('short')
             self.clear_order('short')
             if open2equity_pct < 0.05:# and df.loc[cur_index]['high'] >= self.multiVwap.SFrame_vwap_up_sl2.loc[cur_index]:
@@ -239,11 +259,12 @@ class Strategy:
                 # if self.multiVwap.SFrame_vwap_poc.iloc[-1] < trend_df.loc[cur_index, 'kama2']:
                 #     price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_poc.iloc[-1])
                 price_prepare = max(price_prepare, max(df['high'].iloc[-90:]))
-                price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_up_sl2.loc[cur_index])
+                price_prepare = max(price_prepare, self.multiVwap.SFrame_vwap_up_sl2.loc[cur_index]) + self.multiVwap.atr_dic['ATR'].loc[cur_index]/2
                 sig_short = OrderSignal('short', True, price_prepare, min_amount, order_type='limit', tier_explain="trend short kama1 entry")
             sig_long = None
 
         else:
+            # print('moderating, no trend')
             # 震荡区间
             for side in ('long', 'short'):
                 if self.should_cancel(side):
@@ -326,15 +347,21 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
 
     # 初始化VWAP多周期计算器，参数你可根据需求调整
     windowConfig = LHFrameStd.WindowConfig()
-    multiVwap = LHFrameStd.MultiTFvp_poc(windowConfig.window_tau_l, windowConfig.window_tau_h, windowConfig.window_tau_s)
+    multiVwap = LHFrameStd.MultiTFVWAP(windowConfig.window_tau_l, windowConfig.window_tau_h, windowConfig.window_tau_s)
     multiVwap.calculate_SFrame_vwap_poc_and_std(df, DEBUG)
 
+    multiVwap_15m = LHFrameStd.MultiTFVWAP(windowConfig.window_tau_l, windowConfig.window_tau_h, windowConfig.window_tau_s)
+    multiVwap_15m.calculate_SFrame_vwap_poc_and_std(df_15m, DEBUG)
     
+
     position_amount_dict_sub = {'long':0, 'short':0}
     no_signal_count_short,no_signal_count_long = 0, 0
     peak_value = -float('inf')  # 初始化峰值（回测开始时）
     kama_begin_require = 5000
     assert kama_begin_require < len(df), f'df length not enough to kama_begin_require, which is {kama_begin_require}'
+
+    reached_to_sl2 = False
+    from_open_kline_counter = 0
     for i in range(kama_begin_require, len(df), 1):        
         cur_index = df.index[i]
         kama_slice = df_kama.iloc[:int((i+1)/3)]
@@ -348,8 +375,8 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
         closes = df['close'].iloc[:i+1]
         
         total_value = portfolio.get_total_value(cur_close)
-        base_value = 20_000
-        base_amount = 0.1
+        base_value = 10_000
+        base_amount = 0.2
 
         # 计算倍数，根据总价值按base_value递增
         multiplier = total_value // base_value  # 取整倍数
@@ -377,30 +404,47 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
             no_signal_count_short += 1
         
         total_val = portfolio.get_total_value(cur_close)
-
+        df_15m_pos = df_15m.index.searchsorted(cur_index, side="left")
+        if df_15m_pos == len(df_15m) :
+            print('df_15m_index == None')
+            reached_to_sl2 = position_amount_dict_sub['long'] > 0 or position_amount_dict_sub['short'] > 0
+        else:
+            df_15m_index = df_15m.index[df_15m_pos]
+            if ((position_amount_dict_sub['long'] > 0 and cur_close >= multiVwap_15m.SFrame_vwap_poc.loc[df_15m_index])  or\
+                (position_amount_dict_sub['short'] > 0 and cur_close <= multiVwap_15m.SFrame_vwap_poc.loc[df_15m_index])):
+                reached_to_sl2 = True
+            else:
+                reached_to_sl2 = False
+        reached_to_sl2 = True
         # 更新峰值
-        if total_val > peak_value:  # and (cur_close >= multiVwap.SFrame_vwap_up_sl2.loc[cur_index] or cur_close <= multiVwap.SFrame_vwap_down_sl2.loc[cur_index]):
+        if total_val > peak_value:
             peak_value = total_val
             # print(f'{ datetime.utcfromtimestamp(cur_index) } peak value caused by price {cur_close}')
 
         # 计算回撤
         drawdown = (peak_value - total_val) / peak_value if peak_value > 0 else 0
         # 如果回撤超过6%，执行全平多头和空头
-        if drawdown > 0.02:
+        dynamic_drawdown_thres = 0.01
+
+        if (drawdown > dynamic_drawdown_thres and reached_to_sl2) or drawdown > 0.06:
             if position_amount_dict_sub['long'] > 0:
                 stop_loss_price = df.iloc[i]['close']
                 if stop_loss_price <= max(df.iloc[i:min(i+160, len(df))]['high']):
-                    portfolio.update(stop_loss_price, long_change=-position_amount_dict_sub['long'], cur_time=cur_index, action='stop_loss_long')
-                    position_amount_dict_sub['long'] = 0
+                    reduce_amount = position_amount_dict_sub['long'] 
+                    portfolio.update(stop_loss_price, long_change=-reduce_amount, cur_time=cur_index, action='stop_loss_long')
+                    position_amount_dict_sub['long'] -= reduce_amount
+                    reached_to_sl2 = False
                 else:
-                    print('unable to stop loss long because future max high is lower than required close')
+                    print('**' * 8, 'unable to stop loss long because future max high is lower than required close')
             if position_amount_dict_sub['short'] > 0:
                 stop_loss_price = df.iloc[i]['close']
                 if stop_loss_price >= min(df.iloc[i:min(i+160, len(df))]['low']):
-                    portfolio.update(stop_loss_price, short_change=-position_amount_dict_sub['short'], cur_time=cur_index, action='stop_loss_short')
-                    position_amount_dict_sub['short'] = 0
+                    reduce_amount = position_amount_dict_sub['short']
+                    portfolio.update(stop_loss_price, short_change=-reduce_amount, cur_time=cur_index, action='stop_loss_short')
+                    position_amount_dict_sub['short'] -= reduce_amount
+                    reached_to_sl2 = False
                 else:
-                    print('unable to stop loss short because future min low is higher than required close')
+                    print('**' * 8, 'unable to stop loss short because future min low is higher than required close')
             # 重置峰值，避免重复触发，可以根据策略需求决定是否重置
             total_val = portfolio.get_total_value(cur_close)
             peak_value = total_val  
@@ -419,6 +463,8 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                     portfolio.update(sell_price, long_change=-position_amount_dict_sub['long'], cur_time=cur_index, action='close_long')
                     position_amount_dict_sub['long'] = 0
                     no_signal_count_long = 0  # 有信号，重置计数器
+                    dynamic_drawdown_thres = 0.01
+                    reached_to_sl2 = False
 
             if sig_long and sig_long.action and position_amount_dict_sub['short'] > 0:
                 future_lows = df.iloc[i+1:min(i+160, len(df))]['low']
@@ -428,6 +474,8 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                     portfolio.update(buy_price, short_change=-position_amount_dict_sub['short'], cur_time=cur_index, action='close_short')
                     position_amount_dict_sub['short'] = 0
                     no_signal_count_short = 0
+                    dynamic_drawdown_thres = 0.01
+                    reached_to_sl2 = False
 
             # 然后执行无信号衰减逻辑
             auto_decay = True
@@ -440,6 +488,7 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                         portfolio.update(cur_close, long_change=-reduce_amount, cur_time=cur_index, action='decay_long')
                         position_amount_dict_sub['long'] -= reduce_amount
                     no_signal_count_long = 0
+                    dynamic_drawdown_thres = 0.01
 
                 if no_signal_count_short >= (60/5) * 24 * 0.5  and position_amount_dict_sub['short'] > 0:
                     #衰减仓位时用position_amount_dict_sub['long'] // 2，减半处理合理，但如果仓位为1时会变0，导致永远无法衰减到0。
@@ -448,6 +497,7 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                         portfolio.update(cur_close, short_change=-reduce_amount, cur_time=cur_index, action='decay_short')
                         position_amount_dict_sub['short'] -= reduce_amount
                     no_signal_count_short = 0
+                    dynamic_drawdown_thres = 0.01
 
             equity = portfolio.get_total_value(cur_close)
 
@@ -458,9 +508,14 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
             
             if sig_long and sig_long.action and max_long_condition:
                 future_df = df.iloc[i+1:min(i+160, len(df))]
-                if sig_long.price > min(future_df['low']):  #low比开仓价格还低，才可能进得去多头
+                if len(future_df) == 0 or sig_long.price > min(future_df['low']):  #low比开仓价格还低，才可能进得去多头
                     portfolio.update(sig_long.price, long_change=sig_long.amount, cur_time=cur_index, action='open_long')
                     position_amount_dict_sub['long'] += sig_long.amount
+                    
+                    if from_open_kline_counter > 60:
+                        dynamic_drawdown_thres = 0.005
+                    else:
+                        dynamic_drawdown_thres = 0.01
                     if 0:
                         print('sig_long', df.loc[cur_index], 'sig_long',sig_long, 'sl2:', multiVwap.SFrame_vwap_down_sl2.loc[cur_index])
                         print(multiVwap.SFrame_vwap_down_sl2.loc[df.index[i-1]],
@@ -473,6 +528,7 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
                 else:
                     pass
                     #print('++'*10, datetime.utcfromtimestamp(cur_index), f'long limit={round(sig_long.price, 2) } not touched')
+                from_open_kline_counter += 1
 
             # 空头开仓
             maxh_short_condition = position_amount_dict_sub['short']*cur_close*portfolio.margin_rate < equity/10
@@ -481,12 +537,20 @@ def backtest(client, usdt_init=10000, resample_period='5min'):
 
             if sig_short and sig_short.action and maxh_short_condition:
                 future_df = df.iloc[i+1:min(i+160, len(df))]
-                if sig_short.price < max(future_df['high']):#high比开仓价格还高，才可能进得去空头
+                if len(future_df) == 0 or sig_short.price < max(future_df['high']):#high比开仓价格还高，才可能进得去空头
                     portfolio.update(sig_short.price, short_change=sig_short.amount, cur_time=cur_index, action='open_short')
                     position_amount_dict_sub['short'] += sig_short.amount
+
+                    if from_open_kline_counter > 60:
+                        dynamic_drawdown_thres = 0.005
+                    else:
+                        dynamic_drawdown_thres = 0.01
+
                 else:
                     pass
                     #print('--'*10, datetime.utcfromtimestamp(cur_index), f'short limit={round(sig_short.price, 2) } not touched')
+                    
+                from_open_kline_counter += 1
 
         total_val = portfolio.get_total_value(cur_close)
         if cur_index is not None:
@@ -599,4 +663,16 @@ if __name__ == '__main__':
     # 保存交易日志
     manager.save_trade_log(exchange_id='okx', symbol='ETH/USDT', timeframe='5min', trade_log=portfolio.trade_log)
 
-    render_trades_with_price(df, manager)
+    # render_trades_with_price(df, manager)
+
+    # 转换成 DataFrame，设置时间索引
+    df_history = pd.DataFrame(portfolio.history, columns=['datetime', 'total_asset'])
+    df_history.set_index('datetime', inplace=True)
+    # 绘制曲线，matplotlib 和 pandas 配合很方便
+    df_history['total_asset'].plot()
+
+    plt.title('Backtest Account Equity')
+    plt.xlabel('Time')
+    plt.ylabel('Total Asset')
+    plt.grid(True)
+    plt.show()

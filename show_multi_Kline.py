@@ -11,10 +11,10 @@ from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-import LHFrameStd
+from indicators import LHFrameStd
 from db_client import SQLiteWALClient
 from db_read import read_and_sort_df, resample_to_7_5m
-from dynamic_kama import compute_dynamic_kama
+from indicators import compute_dynamic_kama
 
 # -------- 用户可调参数 --------
 BASIC_INTERVAL = 5
@@ -27,10 +27,10 @@ client = SQLiteWALClient(db_path=DB_PATH, table="combined_30x")
 
 # 两个多周期 VWAP/POC 处理器 (2.5m 和 10m)
 windowConfig = LHFrameStd.WindowConfig()
-multiVwap1 = LHFrameStd.MultiTFvp_poc(windowConfig.window_tau_l,
+multiVwap1 = LHFrameStd.MultiTFVWAP(windowConfig.window_tau_l,
                                      windowConfig.window_tau_h,
                                      windowConfig.window_tau_s)
-multiVwap2 = LHFrameStd.MultiTFvp_poc(windowConfig.window_tau_l,
+multiVwap2 = LHFrameStd.MultiTFVWAP(windowConfig.window_tau_l,
                                      windowConfig.window_tau_h,
                                      windowConfig.window_tau_s)
 

@@ -11,7 +11,7 @@ from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-import LHFrameStd
+from indicators import LHFrameStd
 # from yyyyy2_okx_5m import trade_coin
 
 from db_client import SQLiteWALClient
@@ -19,9 +19,7 @@ from db_client import SQLiteWALClient
 from history_kline import read_and_sort_df
 from db_read import resample_to
 
-from dynamic_kama import  anchored_momentum_via_kama
-# 引入我们之前写好的 KAMA 计算函数
-from dynamic_kama import compute_dynamic_kama
+from indicators import  anchored_momentum_via_kama, compute_dynamic_kama
 
 BASIC_INTERVAL = 5
 use30x = True
@@ -134,7 +132,7 @@ def update_graph_1(n):
         print("read df and convert takes time:", time.time() - before)
 
         before = time.time()
-        multiVwap = LHFrameStd.MultiTFvp_poc(
+        multiVwap = LHFrameStd.MultiTFVWAP(
             window_LFrame=windowConfig.window_tau_l, 
             window_HFrame=windowConfig.window_tau_h,
             window_SFrame=windowConfig.window_tau_s
@@ -356,7 +354,7 @@ def update_graph_2(n):
         print("read df and convert takes time:", time.time() - before)
 
         before = time.time()
-        multiVwap = LHFrameStd.MultiTFvp_poc(
+        multiVwap = LHFrameStd.MultiTFVWAP(
             window_LFrame=windowConfig.window_tau_l, 
             window_HFrame=windowConfig.window_tau_h,
             window_SFrame=windowConfig.window_tau_s
@@ -574,7 +572,7 @@ def update_graph_2(n):
 #         print("read df and convert takes time:", time.time() - before)
 
 #         before = time.time()
-#         multiVwap = LHFrameStd.MultiTFvp_poc(
+#         multiVwap = LHFrameStd.MultiTFVWAP(
 #             window_LFrame=windowConfig.window_tau_l, 
 #             window_HFrame=windowConfig.window_tau_h,
 #             window_SFrame=windowConfig.window_tau_s
