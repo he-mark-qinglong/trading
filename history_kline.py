@@ -70,6 +70,11 @@ class HistoricalDataLoader:
             if local_only:
                 return existing_data
             
+            if existing_data is None:
+                exist_len = 0
+            else:
+                exist_len =  len(existing_data) 
+                
             # print(f'symbol:{symbol} timeframe:{timeframe} existing_data:{existing_data.head}')
             # 确定拉取起点  
             if existing_data is not None and not existing_data.empty:  
@@ -121,22 +126,25 @@ class HistoricalDataLoader:
                     if not ohlcv:
                         if retry_time < 100:
                             retry_time += 1  
+                            print(f'retrying time:{retry_time}')
                             continue
                         else:
+                            print(f'retry times consumed {retry_time}')
                             break
                 except Exception as e:
-                    if retry_time < 10:
+                    if retry_time < 100:
                         retry_time += 1  
                         continue
                     else:
+                        print(f'retry timeout {retry_time}')
                         break
                 if len(all_data) > 0:
                     #print(f'timeframe {timeframe}:{all_data[-1][0]/(60 * 1000)} < {ohlcv[0][0]/(60 * 1000)}')
                     a = datetime.fromtimestamp(all_data[0][0]/1000)
                     b = datetime.fromtimestamp(ohlcv[-1][0]/1000)
                     c = datetime.fromtimestamp(ohlcv[0][0]/1000)
-                    print(f'datetime {timeframe}:{c} < {b} < {a}, got count:{len(ohlcv)} pct:{round((len(all_data) + len(existing_data))/limit, 2)}')
-                    print()
+                    print(f'datetime {timeframe}:{c} < {b} < {a}, got count:{len(ohlcv)} pct:{round((len(all_data) + exist_len)/limit, 2)} limit_all={limit}')
+                    
                 all_data = ohlcv + all_data    
                 # |-----all_data-----|-----ohlcv 1500 len-----|---------|current
                 multipliers = {'1m':1, '3m':3, '5m':5, '15m':15, '1h': 60, '4h':240, '1d':1440}
@@ -145,7 +153,8 @@ class HistoricalDataLoader:
                 old_date = datetime.fromtimestamp(from_timestamp)
                 from_timestamp = get_timestamp_before_minutes(old_date, 100)
                 
-                if len(all_data) + len(existing_data) >= limit:
+                if len(all_data) + exist_len >= limit:
+                    print('required data length matched')
                     break 
                 # 避免触发频率限制  
                 time.sleep(self.exchange.rateLimit / 5000)  
@@ -169,28 +178,7 @@ class HistoricalDataLoader:
                     combined_data = combined_data[~combined_data.index.duplicated(keep='last')]  
                     combined_data.sort_index(inplace=True)  
 
-                # 检查缺失数据  
-                missing_data = find_missing_data(combined_data, timeframe)  
-                if not missing_data.empty:  
-                    print("Filling missing data...")  
-                    for _, row in missing_data.iterrows():  
-                        start = int(row['start'].timestamp() * 1000)  
-                        end = int(row['end'].timestamp() * 1000)  
-
-                        while start < end:  
-                            ohlcv = self.exchange.fetch_ohlcv(  
-                                formatted_symbol,  
-                                timeframe=timeframe,  
-                                since=start,  
-                                limit=300 #limit  
-                            )  
-                            if not ohlcv:  
-                                break  
-                            all_data.extend(ohlcv)  
-                            start = ohlcv[-1][0] + 1  
-                            time.sleep(self.exchange.rateLimit / 1000)  
-                    else:
-                        print("No missing data found.")  
+                
                 # 保存到本地文件  
                 data_manager.save_data(self.exchange_id, symbol, timeframe, combined_data)  
                 print(f"Updated data saved for {symbol} {timeframe}, total rows: {len(combined_data)}")  
@@ -198,7 +186,7 @@ class HistoricalDataLoader:
 
             # 如果没有新数据，返回现有数据  
             #print(f"No new data fetched for {symbol} {timeframe}. Returning existing data.")  
-            return existing_data.iloc[-min(len(existing_data), limit):] if existing_data is not None else pd.DataFrame()  
+            return existing_data.iloc[-min(exist_len, limit):] if existing_data is not None else pd.DataFrame()  
 
         except Exception as e:  
             print(f"Error fetching data for {symbol} {timeframe}: {str(e)}")  
@@ -228,124 +216,74 @@ class DataManager:
         return None  
 
 
-def find_missing_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:  
-    """  
-    检查数据中是否存在缺失的时间段。  
-    :param df: 包含历史数据的 DataFrame，索引为时间戳  
-    :param timeframe: 时间框架（如 '1m'、'5m'）  
-    :return: 缺失时间段的 DataFrame  
-    """  
-    if df is None or df.empty:  
-        print("DataFrame is empty. No data to check.")  
-        return pd.DataFrame()  
+# def main():  
+#     # 初始化数据加载器  
+#     data_manager = DataManager('./data')  
+#     loader = HistoricalDataLoader('binance')  
 
-    # 时间间隔（秒）  
-    timeframe_duration = {  
-        '1m': 60,  
-        '3m': 180,  
-        '5m': 300,  
-        '15m': 900,  
-        '30m': 1800,  
-        '1h': 3600,  
-        '4h': 14400,  
-        '1d': 86400,  
-    }  
-    if timeframe not in timeframe_duration:  
-        raise ValueError(f"Unsupported timeframe: {timeframe}")  
+#     # 定义要获取的交易对和时间框架    
+#     symbols = ['SOL-USDT-SWAP', 'BTC-USDT-SWAP', 'XRP-USDT-SWAP',  ]  
+#     timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']  
 
-    # 计算预期的时间间隔  
-    expected_interval = pd.Timedelta(seconds=timeframe_duration[timeframe])  
+#     symbols = ["BTC-USDT-SWAP"]
+#     timeframes = ['1m']
+#     # 获取并保存数据  
+#     for symbol in symbols:  
+#         print(f"\nFetching data for {symbol}")  
+#         for timeframe in timeframes:  
+#             df = loader.fetch_historical_data(symbol, timeframe, data_manager, 1500000)  
+#             if not df.empty:  
+#                 print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
 
-    # 找出实际时间间隔  
-    actual_intervals = df.index.to_series().diff()  
+#                 print(df.head)
 
-    # 找出缺失的时间点（实际间隔大于预期间隔）  
-    missing_intervals = actual_intervals[actual_intervals > expected_interval]  
+#                 # 定义时间区间  
+#                 start_date = '2024-06-01'  
+#                 end_date = '2024-06-24' 
+#                 df = df.loc[start_date:end_date]  
+#                 rolled = df['volume'].rolling(24)
 
-    if missing_intervals.empty:  
-        return pd.DataFrame()  
+#                 mean = rolled.mean()
+#                 std = rolled.std()
+#                 vol_zscore = (df['volume'] - mean) / std
 
-    # 构造缺失时间段的 DataFrame  
-    missing_data = pd.DataFrame({  
-        'start': missing_intervals.index - missing_intervals,  
-        'end': missing_intervals.index  
-    })  
-    missing_data['duration'] = (missing_data['end'] - missing_data['start']).astype('timedelta64[s]')  
+#                 # 截取该时间区间的数据  
+#                 df_interval = vol_zscore
 
-    print(f"Found {len(missing_data)} missing intervals:")  
-    print(missing_data)  
+#                 for i in range(len(df_interval)):
+#                     if abs(df_interval.iloc[-i]) > 1.5:
+#                         print(df_interval.index[-i], df_interval.iloc[-i])
 
-    return missing_data  
-
-
-def main():  
-    # 初始化数据加载器  
-    data_manager = DataManager('../data')  
-    loader = HistoricalDataLoader('binance')  
-
-    # 定义要获取的交易对和时间框架    
-    symbols = ['SOL-USDT-SWAP', 'BTC-USDT-SWAP', 'XRP-USDT-SWAP',  ]  
-    timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']  
-
-    symbols = ["BTC-USDT-SWAP"]
-    timeframes = ['1m']
-    # 获取并保存数据  
-    for symbol in symbols:  
-        print(f"\nFetching data for {symbol}")  
-        for timeframe in timeframes:  
-            df = loader.fetch_historical_data(symbol, timeframe, data_manager, 500000)  
-            if not df.empty:  
-                print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
-
-                print(df.head)
-
-                # 定义时间区间  
-                start_date = '2024-06-01'  
-                end_date = '2024-06-24' 
-                df = df.loc[start_date:end_date]  
-                rolled = df['volume'].rolling(24)
-
-                mean = rolled.mean()
-                std = rolled.std()
-                vol_zscore = (df['volume'] - mean) / std
-
-                # 截取该时间区间的数据  
-                df_interval = vol_zscore
-
-                for i in range(len(df_interval)):
-                    if abs(df_interval.iloc[-i]) > 1.5:
-                        print(df_interval.index[-i], df_interval.iloc[-i])
-
-                    if i > 200:
-                        break
-            else:  
-                print(f"No new data for {symbol} {timeframe}")  
+#                     if i > 200:
+#                         break
+#             else:  
+#                 print(f"No new data for {symbol} {timeframe}")  
 
 
 def read_and_sort_df(client=None, LIMIT_K_N=None):
-    data_manager = DataManager('../data')  
+    data_manager = DataManager('./data')  
     
     loader = HistoricalDataLoader('binance')  
     loader = HistoricalDataLoader('okx')  
 
     symbol = "BTC-USDT-SWAP"
-    symbol = "ETH-USDT-SWAP"
+    # symbol = "ETH-USDT-SWAP"
     # symbol = "XAUT-USDT-SWAP"
     timeframe = '5m'
     # timeframe = '1h'
     df = None
     for i in range(10):
-        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 700_000,
+        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 5 * 700_000,
                                        local_only=True
                                        )  
-        if df.empty:
+        if df is None or df.empty:
             time.sleep(10)
             continue
         
         df['vol'] = df['volume']
         df['datetime'] = df.index
         break
-    df = df.iloc[-50_000:]
+    df = df.iloc[-320_000:]
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
     # print(df.index[0], df.index[-1])
     return  df

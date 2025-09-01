@@ -19,7 +19,7 @@ from db_client import SQLiteWALClient
 from history_kline import read_and_sort_df
 from db_read import resample_to
 
-from indicators import  anchored_momentum_via_kama, compute_dynamic_kama
+from indicators import  anchored_momentum_via_kama, compute_dynamic_kama, compute_dynamic_kama_with_predictions
 
 BASIC_INTERVAL = 5
 use30x = True
@@ -41,33 +41,6 @@ TREND_LENGTH = 2160000
 LIMIT_K_N += TREND_LENGTH
 
 app = Dash(__name__)
-
-def make_kline_section(idx):
-    """生成一份 K 线区域，所有 id 带上 idx 后缀以免冲突"""
-    suffix = f"-{idx}"
-    return html.Div([
-        html.H2(f"OKX {idx * 60*BASIC_INTERVAL if use30x else BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
-        dcc.ConfirmDialogProvider(
-            children=html.Button("一键平仓", id="btn-close" + suffix, n_clicks=0),
-            id="confirm-close" + suffix,
-            message="⚠️ 确认要全部平仓？此操作不可撤销！"
-        ),
-        html.Div(id="close-status" + suffix, style={"marginTop": "5px", "color": "green"}),
-        dcc.Graph(id="kline-graph" + suffix),
-        dcc.Interval(
-            id='interval' + suffix,
-            interval=(idx * 60 * BASIC_INTERVAL if use30x else BASIC_INTERVAL)*1000,
-            n_intervals=0
-        ),
-        html.Div(id="status-msg" + suffix, style={"color": "red", "marginTop": 10})
-    ], style={"marginBottom": "50px"})  # 下方留白，纵向分隔
-
-# 主 layout：纵向两份
-app.layout = html.Div([
-    make_kline_section(1),
-    make_kline_section(2),
-    # make_kline_section(3),
-])
 
 
 # --- 新增的封装函数，放在文件顶部或合适位置 ---
@@ -125,7 +98,7 @@ def update_graph_1(n):
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
         before = time.time()
         df = read_and_sort_df(client, LIMIT_K_N)
-        df = resample_to(df, '5min')
+        df = resample_to(df, '15min')
         print('data time range', df.index[0], df.index[-1])
 
         # df = resample_to_15m(df)
@@ -160,16 +133,17 @@ def update_graph_1(n):
         kama_params = dict(
             src_col="close",
             len_er=200,
-            fast=15,
-            second2first_times=2.0,
-            slow=1800,
+            fast=96,
+            second2first_times=3.0,
+            slow=480,
             intervalP=0.01,
-            minLen=10,
-            maxLen=60,
-            volLen=30
+            minLen=60,
+            maxLen=600,
+            volLen=30,
+            hl=2,
         )
         before = time.time()
-        df_kama = compute_dynamic_kama(df, **kama_params)
+        df_kama = compute_dynamic_kama_with_predictions(df, **kama_params)
         # df_kama.reindex()
         
         print("compute_dynamic_kama-1 takes time:", time.time() - before)
@@ -248,7 +222,50 @@ def update_graph_1(n):
             fillcolor='rgba(255,0,0,0.2)',
             line=dict(width=0), name="KAMA1<KAMA2"
         ), row=1, col=1)
+        
 
+        # ---------- 预测 KAMA 绘制（kama?_predict_exact） ----------
+        # 线条（你要求替代颜色：用蓝色代替绿色，用橙色代替红色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama1_predict_exact"],
+            mode="lines", name="KAMA1 Predict (exact)", line=dict(color="royalblue", width=1, dash="dash")
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama2_predict_exact"],
+            mode="lines", name="KAMA2 Predict (exact)", line=dict(color="orange", width=2, dash="dash")
+        ), row=1, col=1)
+
+        # 填充区域（kama1_predict_exact vs kama2_predict_exact）
+        mask_up_pred = df_kama["kama1_predict_exact"] >= df_kama["kama2_predict_exact"]
+        mask_dn_pred = ~mask_up_pred
+
+        # 蓝色填充（预测 KAMA1 >= KAMA2 -> 用蓝色代替原绿色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up_pred],
+            y=df_kama["kama2_predict_exact"][mask_up_pred],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up_pred],
+            y=df_kama["kama1_predict_exact"][mask_up_pred],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(30,144,255,0.2)',  # DodgerBlue semi-transparent
+            line=dict(width=0), name="KAMA1 Pred ≥ KAMA2 Pred"
+        ), row=1, col=1)
+
+        # 橙色填充（预测 KAMA1 < KAMA2 -> 用橙色代替原红色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn_pred],
+            y=df_kama["kama1_predict_exact"][mask_dn_pred],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn_pred],
+            y=df_kama["kama2_predict_exact"][mask_dn_pred],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(255,165,0,0.2)',  # Orange semi-transparent
+            line=dict(width=0), name="KAMA1 Pred < KAMA2 Pred"
+        ), row=1, col=1)
 
         # 这里插入交易信号叠加
         from strategy_logs import TradeLogManager
@@ -350,7 +367,7 @@ def update_graph_2(n):
         df = read_and_sort_df(client, LIMIT_K_N)
 
         print('data time range', df.index[0], df.index[-1] )
-        df = resample_to(df.copy(deep=True), '15min')
+        df = resample_to(df.copy(deep=True), '4h')
         print("read df and convert takes time:", time.time() - before)
 
         before = time.time()
@@ -382,18 +399,19 @@ def update_graph_2(n):
         kama_params = dict(
             src_col="close",
             len_er=200,
-            fast=15,
-            second2first_times=2.0,
-            slow=1800,
+            fast=96/16,
+            second2first_times=2,
+            slow=480/16,
             intervalP=0.01,
-            minLen=10,
-            maxLen=60,
-            volLen=30
+            minLen=60/16,
+            maxLen=600/16,
+            volLen=30,
+            hl=2,
         )
         before = time.time()
 
         
-        df_kama = compute_dynamic_kama(df, **kama_params)
+        df_kama = compute_dynamic_kama_with_predictions(df, **kama_params)
         
         print("compute_dynamic_kama-2 takes time:", time.time() - before)
 
@@ -470,6 +488,89 @@ def update_graph_2(n):
             mode="lines", fill='tonexty',
             fillcolor='rgba(255,0,0,0.2)',
             line=dict(width=0), name="KAMA1<KAMA2"
+        ), row=1, col=1)
+
+        # (A.5) 行1: 绘制 KAMA1/KAMA2 及区域填充
+        # 线条
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama1"],
+            mode="lines", name="KAMA1", line=dict(color="green", width=1)
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama2"],
+            mode="lines", name="KAMA2", line=dict(color="blue", width=2)
+        ), row=1, col=1)
+        # 填充区域
+        mask_up = df_kama["kama1"] >= df_kama["kama2"]
+        mask_dn = ~mask_up
+        # 绿色填充
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up],
+            y=df_kama["kama2"][mask_up],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up],
+            y=df_kama["kama1"][mask_up],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(0,255,0,0.2)',
+            line=dict(width=0), name="KAMA1≥KAMA2"
+        ), row=1, col=1)
+        # 红色填充
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn],
+            y=df_kama["kama1"][mask_dn],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn],
+            y=df_kama["kama2"][mask_dn],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(255,0,0,0.2)',
+            line=dict(width=0), name="KAMA1<KAMA2"
+        ), row=1, col=1)
+
+        # ---------- 预测 KAMA 绘制（kama?_predict_exact） ----------
+        # 线条（你要求替代颜色：用蓝色代替绿色，用橙色代替红色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama1_predict_exact"],
+            mode="lines", name="KAMA1 Predict (exact)", line=dict(color="royalblue", width=1, dash="dash")
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"], y=df_kama["kama2_predict_exact"],
+            mode="lines", name="KAMA2 Predict (exact)", line=dict(color="orange", width=2, dash="dash")
+        ), row=1, col=1)
+
+        # 填充区域（kama1_predict_exact vs kama2_predict_exact）
+        mask_up_pred = df_kama["kama1_predict_exact"] >= df_kama["kama2_predict_exact"]
+        mask_dn_pred = ~mask_up_pred
+
+        # 蓝色填充（预测 KAMA1 >= KAMA2 -> 用蓝色代替原绿色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up_pred],
+            y=df_kama["kama2_predict_exact"][mask_up_pred],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_up_pred],
+            y=df_kama["kama1_predict_exact"][mask_up_pred],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(30,144,255,0.2)',  # DodgerBlue semi-transparent
+            line=dict(width=0), name="KAMA1 Pred ≥ KAMA2 Pred"
+        ), row=1, col=1)
+
+        # 橙色填充（预测 KAMA1 < KAMA2 -> 用橙色代替原红色）
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn_pred],
+            y=df_kama["kama1_predict_exact"][mask_dn_pred],
+            mode="lines", line=dict(width=0), showlegend=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df_kama["datetime"][mask_dn_pred],
+            y=df_kama["kama2_predict_exact"][mask_dn_pred],
+            mode="lines", fill='tonexty',
+            fillcolor='rgba(255,165,0,0.2)',  # Orange semi-transparent
+            line=dict(width=0), name="KAMA1 Pred < KAMA2 Pred"
         ), row=1, col=1)
 
         # (B) 行 2: 成交量柱 + 通道
@@ -554,6 +655,35 @@ def update_graph_2(n):
 
 
 
+
+def make_kline_section(idx):
+    """生成一份 K 线区域，所有 id 带上 idx 后缀以免冲突"""
+    suffix = f"-{idx}"
+    return html.Div([
+        html.H2(f"OKX {idx * 3 * 60*BASIC_INTERVAL if use30x else BASIC_INTERVAL}s K-line OHLCV (Auto-refresh)"),
+        dcc.ConfirmDialogProvider(
+            children=html.Button("一键平仓", id="btn-close" + suffix, n_clicks=0),
+            id="confirm-close" + suffix,
+            message="⚠️ 确认要全部平仓？此操作不可撤销！"
+        ),
+        html.Div(id="close-status" + suffix, style={"marginTop": "5px", "color": "green"}),
+        dcc.Graph(id="kline-graph" + suffix),
+        dcc.Interval(
+            id='interval' + suffix,
+            interval=(idx * 3 * 60 * BASIC_INTERVAL if use30x else BASIC_INTERVAL)*1000,
+            n_intervals=0
+        ),
+        html.Div(id="status-msg" + suffix, style={"color": "red", "marginTop": 10})
+    ], style={"marginBottom": "50px"})  # 下方留白，纵向分隔
+
+# 主 layout：纵向两份
+app.layout = html.Div([
+    make_kline_section(1),
+    make_kline_section(2),
+    # make_kline_section(3),
+])
+
+
 # @app.callback(
 #     Output("kline-graph-3", "figure"),
 #     Output("status-msg-3", "children"),
@@ -601,7 +731,7 @@ def update_graph_2(n):
 #             src_col="close",
 #             len_er=200,
 #             fast=15,
-#             second2first_times=2.0,
+#             second2first_times=3.0,
 #             slow=1800,
 #             intervalP=0.01,
 #             minLen=10,
