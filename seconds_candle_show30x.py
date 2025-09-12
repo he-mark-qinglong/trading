@@ -88,11 +88,11 @@ def add_trade_signals_to_fig(fig, trade_df, row=1, col=1):
         name='Close Short'
     ), row=row, col=col)
 
-@app.callback(
-    Output("kline-graph-1", "figure"),
-    Output("status-msg-1", "children"),
-    Input("interval-1", "n_intervals")
-)
+# @app.callback(
+#     Output("kline-graph-1", "figure"),
+#     Output("status-msg-1", "children"),
+#     Input("interval-1", "n_intervals")
+# )
 def update_graph_1(n):
     try:
         # --- 1. 读数据 & 计算 vp_poc/VWAP/STD ---
@@ -133,12 +133,12 @@ def update_graph_1(n):
         kama_params = dict(
             src_col="close",
             len_er=200,
-            fast=96,
+            fast=19,
             second2first_times=3.0,
             slow=480,
             intervalP=0.01,
-            minLen=60,
-            maxLen=600,
+            minLen=6,
+            maxLen=60,
             volLen=30,
             hl=2,
         )
@@ -167,12 +167,12 @@ def update_graph_1(n):
         for name, color in {
             **{k:'purple'      for k in ["SFrame_vwap_poc"]},
             # **{k:'deeppink'    for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
-            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
             # **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
             # **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
             **{k:'black'        for k in ["SFrame_center"]},
-            **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
-            **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},
+            # **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
+            # **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},
         }.items():
             series = getattr(multiVwap, name, None)
             if isinstance(series, pd.Series):
@@ -367,7 +367,7 @@ def update_graph_2(n):
         df = read_and_sort_df(client, LIMIT_K_N)
 
         print('data time range', df.index[0], df.index[-1] )
-        df = resample_to(df.copy(deep=True), '4h')
+        df = resample_to(df.copy(deep=True), '1h')
         print("read df and convert takes time:", time.time() - before)
 
         before = time.time()
@@ -399,12 +399,12 @@ def update_graph_2(n):
         kama_params = dict(
             src_col="close",
             len_er=200,
-            fast=96/16,
+            fast=6,
             second2first_times=2,
-            slow=480/16,
+            slow=48,
             intervalP=0.01,
-            minLen=60/16,
-            maxLen=600/16,
+            minLen=6,
+            maxLen=60,
             volLen=30,
             hl=2,
         )
@@ -434,12 +434,10 @@ def update_graph_2(n):
         for name, color in {
             **{k:'purple'      for k in ["SFrame_vwap_poc"]},
             # **{k:'deeppink'    for k in ["SFrame_vwap_up_getin","SFrame_vwap_down_getin"]},
-            # **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
-            # **{k:'blue'        for k in ["SFrame_vwap_up_sl"]},
-            # **{k:'blue'        for k in ["SFrame_vwap_down_sl"]},
+            **{k:'turquoise'   for k in ["SFrame_vwap_up_poc","SFrame_vwap_down_poc"]},
+            # **{k:'blue'        for k in ["SFrame_vwap_up_sl", "SFrame_vwap_down_sl"]},
             **{k:'black'        for k in ["SFrame_center"]},
-            **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2"]},
-            **{k:'darkslategray' for k in ["SFrame_vwap_down_sl2"]},
+            # **{k:'darkslategray' for k in ["SFrame_vwap_up_sl2", "SFrame_vwap_down_sl2"]},
         }.items():
             series = getattr(multiVwap, name, None)
             if isinstance(series, pd.Series):
@@ -678,7 +676,7 @@ def make_kline_section(idx):
 
 # 主 layout：纵向两份
 app.layout = html.Div([
-    make_kline_section(1),
+    # make_kline_section(1),
     make_kline_section(2),
     # make_kline_section(3),
 ])

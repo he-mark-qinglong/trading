@@ -6,13 +6,80 @@ from datetime import datetime , timedelta
 import os  
 
 
-class HistoricalDataLoader:  
+class __HistoricalDataLoader:  
     def __init__(self, exchange_id: str = 'okx'):  
         """  
         初始化数据加载器  
         :param exchange_id: 交易所ID  
         """  
         self.exchange_id = exchange_id
+        self.exchange = getattr(ccxt, exchange_id)({  
+            'enableRateLimit': True,  
+            'options': {  
+                'defaultType': 'swap',  
+                'adjustForTimeDifference': True,  
+            },  
+            'proxies': {  
+                'http': 'http://127.0.0.1:7890',  # clash 默认 HTTP 代理端口  
+                'https': 'http://127.0.0.1:7890'  # clash 默认 HTTPS 代理端口  
+            }  
+        })  
+
+        self.timeframes = {  
+            '1m': {'limit': 1000, 'duration': 60},  
+            '3m': {'limit': 1000, 'duration': 180},  
+            '5m': {'limit': 1000, 'duration': 300},  
+            '15m': {'limit': 1000, 'duration': 900},  
+            '30m': {'limit': 1000, 'duration': 1800},  
+            '1h': {'limit': 1000, 'duration': 3600},  
+            '4h': {'limit': 1000, 'duration': 14400},  
+            '1d': {'limit': 1000, 'duration': 86400},  
+        }  
+
+    
+
+import time
+import math
+from datetime import datetime, timedelta
+import pandas as pd
+import logging
+import random
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+class HistoricalDataLoader:
+    """
+    功能：
+      - 读取本地数据（返回 DataFrame，及最早/最晚时间）
+      - 向前补历史（从 given_earliest 向更久远抓取指定数量）
+      - 向后补最新（从 given_latest 向现在抓取直到最近或达到数量）
+      - 合并并保存
+    依赖：
+      - self.exchange.fetch_ohlcv(symbol, timeframe, since=ms, limit=n)
+      - data_manager.load_data(exchange_id, symbol, timeframe) -> pd.DataFrame or None
+      - data_manager.save_data(exchange_id, symbol, timeframe, df)
+    """
+
+    # timeframe -> seconds 映射
+    TIMEFRAME_SECONDS = {
+        '1m': 60,
+        '3m': 3 * 60,
+        '5m': 5 * 60,
+        '15m': 15 * 60,
+        '30m': 30 * 60,
+        '1h': 60 * 60,
+        '4h': 4 * 60 * 60,
+        '1d': 24 * 60 * 60,
+    }
+    def __init__(self, exchange_id: str = 'okx', rate_limit_sleep_factor: float = 1.0):  
+        """  
+        初始化数据加载器  
+        :param exchange_id: 交易所ID  
+        """  
+        self.exchange_id = exchange_id
+        self.rate_limit_sleep_factor = rate_limit_sleep_factor
+
         self.exchange = getattr(ccxt, exchange_id)({  
             'enableRateLimit': True,  
             'options': {  
@@ -47,7 +114,133 @@ class HistoricalDataLoader:
             return f"{base}-USDT-SWAP"  
         return symbol  
 
-    def fetch_historical_data(  
+    # -------------------------
+    # 读取本地数据并返回最早/最晚时间
+    # -------------------------
+    def load_local_data(self, symbol: str, timeframe: str, data_manager) -> (pd.DataFrame, int, int):
+        """
+        从 data_manager 加载数据，返回 (df, earliest_ts, latest_ts)
+        - df: pd.DataFrame，index 为 datetime（升序）；若无数据返回空 DataFrame
+        - earliest_ts, latest_ts: unix 秒（int），若没有数据返回 (None, None)
+        """
+        df = data_manager.load_data(self.exchange_id, symbol, timeframe)
+        if df is None or df.empty:
+            return pd.DataFrame(), None, None
+
+        # 确保 index 为 DatetimeIndex 并升序
+        if not isinstance(df.index, pd.DatetimeIndex):
+            try:
+                df.index = pd.to_datetime(df['timestamp'], unit='ms')
+                df.drop(columns=['timestamp'], inplace=True, errors='ignore')
+            except Exception:
+                # 假设存储的 index 就是时间索引；若不行则返回空
+                logger.warning("Loaded data index is not datetime and 'timestamp' column not found/convertible.")
+                return pd.DataFrame(), None, None
+
+        df = df.sort_index()
+        earliest_ts = int(df.index[0].timestamp())
+        latest_ts = int(df.index[-1].timestamp())
+        return df, earliest_ts, latest_ts
+
+    # -------------------------
+    # 通用 fetch 单次请求（包含重试、退避）
+    # -------------------------
+    def _fetch_with_retries(self, formatted_symbol: str, timeframe: str, since_seconds: int, limit_per_call: int,
+                            max_retries: int = 5, backoff_base: float = 0.5):
+        """
+        fetch_ohlcv with retries and exponential backoff.
+        - since_seconds: unix seconds (int) or None
+        - returns list of ohlcv or [] on unrecoverable failure
+        """
+        attempt = 0
+        while attempt <= max_retries:
+            try:
+                since_ms = None if since_seconds is None else int(since_seconds * 1000)
+                ohlcv = self.exchange.fetch_ohlcv(formatted_symbol, timeframe=timeframe, since=since_ms, limit=limit_per_call)
+                # ensure list
+                return ohlcv or []
+            except Exception as e:
+                attempt += 1
+                wait = min(10, backoff_base * (2 ** (attempt - 1)))  # cap backoff to 10s
+                extra = random.uniform(0, 0.1 * wait)
+                logger.warning(f"fetch_ohlcv error{e} (attempt {attempt}/{max_retries}) for {formatted_symbol} {timeframe} since={since_seconds}: {e}. Backoff {wait+extra:.2f}s")
+                time.sleep((wait + extra) * self.rate_limit_sleep_factor)
+        logger.error(f"Failed fetch_ohlcv after {max_retries} attempts for {formatted_symbol} {timeframe} since={since_seconds}")
+        return []
+
+    # -------------------------
+    # 向后补最新数据（从 latest_ts 向现在抓取直到现在或达到 limit）
+    # -------------------------
+    def fetch_forward_to_now(self, symbol: str, timeframe: str, data_manager, limit: int = 2000,
+                             limit_per_call: int = 500, max_retries: int = 5, local_only: bool = False) -> pd.DataFrame:
+        """
+        从本地 latest_ts 向后抓取，直到接近当前时间或累计到 limit 条。
+        返回合并后的数据并保存本地。
+        - local_only: True 时仅返回本地数据，不联网
+        """
+        formatted_symbol = self.format_symbol(symbol)
+        local_df, earliest_ts, latest_ts = self.load_local_data(symbol, timeframe, data_manager)
+        if local_only:
+            return local_df.iloc[-min(len(local_df), limit):] if not local_df.empty else pd.DataFrame()
+
+        tf_seconds = self.TIMEFRAME_SECONDS.get(timeframe)
+        if tf_seconds is None:
+            raise ValueError(f"Unsupported timeframe {timeframe}")
+
+        # 如果没有本地数据，从 limit 条之前的时间点开始抓取
+        end_ts_now = int(time.time())
+        if latest_ts is None:
+            # start from now - limit * timeframe
+            since = max(0, end_ts_now - limit * tf_seconds)
+        else:
+            # start from the next candle after latest_ts
+            since = latest_ts + tf_seconds
+
+        all_ohlcv = []
+        while since * 1000 <= end_ts_now * 1000 and len(all_ohlcv) < limit:
+            # fetch
+            ohlcv = self._fetch_with_retries(formatted_symbol, timeframe, since, min(limit_per_call, limit - len(all_ohlcv)), max_retries=max_retries)
+            if not ohlcv:
+                # nothing fetched => break (or retry handled inside)
+                break
+            # ccxt 返回升序，[oldest ... newest]
+            all_ohlcv.extend(ohlcv)
+            # advance since to last returned timestamp + 1 timeframe
+            last_ts_ms = ohlcv[-1][0]
+            since = int(last_ts_ms / 1000) + tf_seconds
+
+            # 遵守 rate limit
+            if hasattr(self.exchange, 'rateLimit') and self.exchange.rateLimit:
+                # ccxt rateLimit 通常是毫秒
+                time.sleep(max(0.001, (self.exchange.rateLimit / 1000.0) * 0.1) * self.rate_limit_sleep_factor)
+
+        # build DataFrame
+        if all_ohlcv:
+            new_df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            new_df['timestamp'] = pd.to_datetime(new_df['timestamp'], unit='ms')
+            new_df.set_index('timestamp', inplace=True)
+            new_df = new_df[~new_df.index.duplicated(keep='last')]
+            new_df.sort_index(inplace=True)
+
+            # merge: existing_data first, new_data second -> keep last (new data overwrites any duplicates)
+            if not local_df.empty:
+                combined = pd.concat([local_df, new_df])
+            else:
+                combined = new_df
+
+            combined = combined[~combined.index.duplicated(keep='last')]
+            combined.sort_index(inplace=True)
+            # save
+            data_manager.save_data(self.exchange_id, symbol, timeframe, combined)
+            return combined.iloc[-min(len(combined), limit):]
+        else:
+            # nothing new fetched, return local
+            return local_df.iloc[-min(len(local_df), limit):] if not local_df.empty else pd.DataFrame()
+
+    # -------------------------
+    # 向前补历史数据（从 earliest_ts 向过去抓取指定数量）
+    # -------------------------
+    def fetch_backward_history(  
         self,  
         symbol: str,  
         timeframe: str,  
@@ -64,7 +257,7 @@ class HistoricalDataLoader:
         """  
         try:  
             formatted_symbol = self.format_symbol(symbol)  
-
+            print('after format', formatted_symbol)
             # 加载本地数据  
             existing_data = data_manager.load_data(self.exchange_id, symbol, timeframe)  
             if local_only:
@@ -216,66 +409,25 @@ class DataManager:
         return None  
 
 
-# def main():  
-#     # 初始化数据加载器  
-#     data_manager = DataManager('./data')  
-#     loader = HistoricalDataLoader('binance')  
-
-#     # 定义要获取的交易对和时间框架    
-#     symbols = ['SOL-USDT-SWAP', 'BTC-USDT-SWAP', 'XRP-USDT-SWAP',  ]  
-#     timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']  
-
-#     symbols = ["BTC-USDT-SWAP"]
-#     timeframes = ['1m']
-#     # 获取并保存数据  
-#     for symbol in symbols:  
-#         print(f"\nFetching data for {symbol}")  
-#         for timeframe in timeframes:  
-#             df = loader.fetch_historical_data(symbol, timeframe, data_manager, 1500000)  
-#             if not df.empty:  
-#                 print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
-
-#                 print(df.head)
-
-#                 # 定义时间区间  
-#                 start_date = '2024-06-01'  
-#                 end_date = '2024-06-24' 
-#                 df = df.loc[start_date:end_date]  
-#                 rolled = df['volume'].rolling(24)
-
-#                 mean = rolled.mean()
-#                 std = rolled.std()
-#                 vol_zscore = (df['volume'] - mean) / std
-
-#                 # 截取该时间区间的数据  
-#                 df_interval = vol_zscore
-
-#                 for i in range(len(df_interval)):
-#                     if abs(df_interval.iloc[-i]) > 1.5:
-#                         print(df_interval.index[-i], df_interval.iloc[-i])
-
-#                     if i > 200:
-#                         break
-#             else:  
-#                 print(f"No new data for {symbol} {timeframe}")  
-
-
 def read_and_sort_df(client=None, LIMIT_K_N=None):
     data_manager = DataManager('./data')  
     
     loader = HistoricalDataLoader('binance')  
-    loader = HistoricalDataLoader('okx')  
+    # loader = HistoricalDataLoader('okx')  
 
     symbol = "BTC-USDT-SWAP"
-    # symbol = "ETH-USDT-SWAP"
-    # symbol = "XAUT-USDT-SWAP"
+    symbol = "ETH-USDT-SWAP"
+    # symbol = "XRP-USDT-SWAP"
+    # symbol = "SOL-USDT-SWAP"
     timeframe = '5m'
     # timeframe = '1h'
     df = None
     for i in range(10):
-        df = loader.fetch_historical_data(symbol, timeframe, data_manager, 5 * 700_000,
-                                       local_only=True
-                                       )  
+        # df = loader.fetch_backward_history(symbol, timeframe, data_manager, 5 * 700_000,
+        #                             #    local_only=True
+        #                                )  
+        
+        df = loader.fetch_forward_to_now(symbol, timeframe, data_manager, 5 * 700_000)  
         if df is None or df.empty:
             time.sleep(10)
             continue
@@ -283,9 +435,12 @@ def read_and_sort_df(client=None, LIMIT_K_N=None):
         df['vol'] = df['volume']
         df['datetime'] = df.index
         break
-    df = df.iloc[-320_000:]
+    # df = df.iloc[-120_000:]
+    # df = df.iloc[-480_000:-120_000]
+    # df = df.iloc[-480_000:]
     print(f"Fetched and updated {timeframe} data for {symbol}, total rows: {len(df)}")  
-    # print(df.index[0], df.index[-1])
+    print(df.index[0], df.index[-1])
+    print(df.tail(20))
     return  df
 
 if __name__ == "__main__":  

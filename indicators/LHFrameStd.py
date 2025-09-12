@@ -13,7 +13,7 @@ class WindowConfig:
         self.febonaqis  = [i+1 for i in [0, 0.236, 0.382, 0.5, 0.618, 0.768, 1] ]
         #参数解释，按照日线的趋势均线规则，参数取, 5,14,30. 但是30作为短线回归几乎不太有效（后续资金量如果比较大可以考虑)，所以30周期的先不用。
         #全部基于1h的级别基础之上来乘以这个系数.
-        self.window_tau_s = int(600*self.febonaqis[0])  #1d = 1h x 24, 14x24 == 336
+        self.window_tau_s = int(4*24*10*self.febonaqis[0])  #1d = 1h x 24, 14x24 == 336
         self.window_tau_h = int(120*self.febonaqis[0])     #8h = 1h x 12, 5x24 == 120
         self.window_tau_l = int(24*self.febonaqis[0])   #1h = 2.5m x 24
 
@@ -41,8 +41,8 @@ class MultiTFVWAP:
         # 各种结果的全量 Series（索引与 self.df 保持一致）
         self.SFrame_center = pd.Series(dtype=float)
         self.SFrame_vwap_poc       = pd.Series(dtype=float)
-        self.slow_poc            = pd.Series(dtype=float)
-        self.shigh_poc           = pd.Series(dtype=float)
+        self.slow_poc3            = pd.Series(dtype=float)
+        self.shigh_poc3           = pd.Series(dtype=float)
         self.slow_poc2            = pd.Series(dtype=float)
         self.shigh_poc2           = pd.Series(dtype=float)
         # 向量化后的一些 Series
@@ -162,18 +162,49 @@ class MultiTFVWAP:
         out = self._run_heavy(block, debug=debug)
 
         # 5) 只取 > old_last_ts 的那段新结果，dropna 再 concat
-        def take_new(old: pd.Series, new: pd.Series) -> pd.Series:
+        # def take_new(old: pd.Series, new: pd.Series) -> pd.Series:
+        #     if old_last_ts is not None:
+        #         new = new[new.index > old_last_ts]
+        #     new = new.dropna()
+        #     if new.empty:
+        #         return old
+        #     return pd.concat([old, new])
+        
+
+        def round_series_to_hundred_floor(s: pd.Series) -> pd.Series:
+            """
+            将 Series 中的数值向下取整到 100 的倍数，并转换为整数类型（无小数位）。
+            处理 NaN：保留 NaN（如果需要可以改为填充）。
+            """
+            # 仅对非空值进行处理
+            mask = s.notna()
+            # 向下取整到 100 的倍数：先除以 100，向下取整，再乘回 100
+            values = s[mask].astype(float)
+            rounded = (np.floor(values / 20) * 20).astype('int64')
+            result = s.copy()
+            result.loc[mask] = rounded
+            return result
+
+        def take_new(old: pd.Series, new: pd.Series, old_last_ts=None) -> pd.Series:
+            """
+            合并 old 与 new（仅取 new 中时间晚于 old_last_ts 的部分），
+            并把结果中的数值都向下取整到 100 的倍数（去掉小数位）。
+            """
             if old_last_ts is not None:
                 new = new[new.index > old_last_ts]
             new = new.dropna()
             if new.empty:
-                return old
-            return pd.concat([old, new])
+                # 对返回的 old 也进行相同的取整处理，确保一致性（可选）
+                return round_series_to_hundred_floor(old)
+            combined = pd.concat([old, new])
+            # 对合并后的 series 做取整处理并返回
+            return round_series_to_hundred_floor(combined)
+
 
         
         self.SFrame_vwap_poc       = take_new(self.SFrame_vwap_poc,       out['S'])
-        self.slow_poc            = take_new(self.slow_poc,            out['slow3'])
-        self.shigh_poc           = take_new(self.shigh_poc,           out['shigh3'])
+        self.slow_poc3            = take_new(self.slow_poc,            out['slow3'])
+        self.shigh_poc3           = take_new(self.shigh_poc,           out['shigh3'])
         self.slow_poc2            = take_new(self.slow_poc2,            out['s_low2'])
         self.shigh_poc2           = take_new(self.shigh_poc2,           out['s_high2'])
         self.SFrame_center = (self.slow_poc2 + self.shigh_poc2)/2
@@ -195,20 +226,21 @@ class MultiTFVWAP:
                                     length=self.rma_smooth_window_s)
 
         # 5) 计算上下轨（RMA + max/min 合并逻辑）
-        rma_s = lambda s: ta.ema(s, length=self.rma_smooth_window_s)
-        slow, shigh = self.slow_poc, self.shigh_poc
+        # rma_s = lambda s: ta.ema(s, length=self.rma_smooth_window_s)
+        rma_s = lambda s : s
+        slow3, shigh3 = self.slow_poc3, self.shigh_poc3
         s_low2, s_high2 = self.slow_poc2, self.shigh_poc2
 
         # SFrame
-        self.SFrame_vwap_up_poc    = rma_s(shigh)
+        self.SFrame_vwap_up_poc    = rma_s(shigh3)
         self.SFrame_vwap_up_getin  = rma_s(s_high2)  #shigh > s_high2
-        self.SFrame_vwap_up_sl     = rma_s(shigh + (shigh - s_high2))
-        self.SFrame_vwap_up_sl2    = rma_s(shigh + 2*(shigh - s_high2))
+        self.SFrame_vwap_up_sl     = rma_s(shigh3 + (shigh3 - s_high2))
+        self.SFrame_vwap_up_sl2    = rma_s(shigh3 + 2*(shigh3 - s_high2))
 
-        self.SFrame_vwap_down_poc    = rma_s(slow)
+        self.SFrame_vwap_down_poc    = rma_s(slow3)
         self.SFrame_vwap_down_getin  = rma_s(s_low2)  #s_low2 > slow
-        self.SFrame_vwap_down_sl     = rma_s(slow - (s_low2 - slow))
-        self.SFrame_vwap_down_sl2    = rma_s(slow - 2* (s_low2 - slow))
+        self.SFrame_vwap_down_sl     = rma_s(slow3 - (s_low2 - slow3))
+        self.SFrame_vwap_down_sl2    = rma_s(slow3 - 2* (s_low2 - slow3))
 
         self.SFrame_vwap_poc.reindex(self.df.index, method='ffill')
         self.SFrame_vwap_down_sl2.reindex(self.df.index, method='ffill')
